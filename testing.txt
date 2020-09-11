@@ -1,4 +1,4 @@
-
+This is a new line
 rr
 testtest
 Testing a new file
