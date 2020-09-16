@@ -11,16 +11,6 @@ library(tseries)
 library(knitr)
 
 # Exploratory analysis functions ---------------------------
-
-# Summary: Evaluate whether the string with "-".
-# @dataset is the vector 
-# Return: True or False
-IsDash <- function(dataset) {
-  string_split <- strsplit(as.character(dataset), split = "")
-  res <- lapply(string_split, function(x) "-" %in% x)
-  return(unlist(res))
-}
-
 # Summary: Create day, week, month, year variables.
 # @dataset: dataframe with features, must include the feature `data`, which contains time information
 # Return: dataframe with day, week, month, and year variables
@@ -43,7 +33,7 @@ GetTimeInfo <- function(dataset){
 # Return: the group name and True or False
 IsAfterDate <- function(dataset, group, certain_date) {
   idx = ddply(dataset, .(get(group)), summarize, res = sort(date)[1] > 
-                as.POSIXct(certain_date))
+                as.Date(certain_date))
   return(idx)
 }
 
@@ -59,22 +49,22 @@ de_seasonal <- function(dataset, features = c("gcu_seconds", "memory_gib_seconds
     res[(1+season):nrow(dataset), features] <- dataset[(1+season):nrow(dataset), features] - 
       dataset[1:(nrow(dataset)-season), features]
   }
-  # if (type == "variance") {
-  #   mean_season <- lapply(1:season, function(x) {
-  #     apply(dataset[seq(x, nrow(dataset), season), features], 2, mean)
-  #   })
-  #   
-  #   for (i in 1:length())
-  #   
-  # }
+  if (type == "variance") {
+    mean_season <- lapply(1:season, function(x) {
+      apply(dataset[seq(x, nrow(dataset), season), features], 2, mean)
+    })
+
+    for (i in 1:season) {
+      res[seq(i, nrow(dataset), season), features] <- dataset[seq(i, nrow(dataset), season), features] -
+        mean_season[[i]]
+    }
+
+  }
   return(res)
 }
 
 
-
 # Visulazation ---------------------------
-# General plot by each second
-
 # Summary: Line plot across times
 # @dataset: original time series
 # @group: group by certain group
@@ -84,59 +74,64 @@ GetLineplot = function(dataset, group, filepath) {
   gg_gcu = ggplot(dataset, 
                   aes(x = as.Date(date), y = gcu_seconds, col = get(group))) + 
     geom_line() + 
-    xlab("") + theme(legend.position="none")
+    xlab("Time") +
+    ylab("GCU-Seconds") + 
+    theme(legend.position="none")
   
   gg_memory = ggplot(dataset, 
                      aes(x = as.Date(date), y = memory_gib_seconds, col = get(group))) + 
     geom_line() + 
-    xlab("") +  theme(legend.position="none")
+    xlab("Time") +
+    ylab("RAM (GiB) - Seconds") +
+    theme(legend.position="none")
   
   ggsave(filename = paste(filepath,"gcu_memory_linegraph.png", sep = ""), 
          plot = grid.arrange(gg_gcu, gg_memory),
          width = 10, height = 8, dpi = 100)
 }
 
-# Summary: Box plot by month, weekdays, year
-# @dataset: original time series
-# @group: boxplot of certain group
-# @feature: the feature we want to check
-# @filepath: path to save the image
-# Return pictures saved in specified filepath
-GetBoxplot = function(dataset, group, feature, filepath){
+# Summary: Box plot by month, weekdays, year.
+# @dataset: original time series.
+# @group: boxplot of certain group.
+# @feature: the feature we want to check.
+# @filepath: path to save the image.
+# @feature_lab: y-label of the plots.
+# Return pictures saved in specified filepath.
+GetBoxplot = function(dataset, group, feature, filepath, feature_lab){
   dataset$Month = factor(dataset$Month, levels = month.abb)
   dataset$Week = factor(dataset$Week, 
                         levels = c("Mon", "Tue", "Wed",
                                    "Thu", "Fri", "Sat",
                                    "Sun"))
   dataset <- dataset[, c(group, feature, "Month", "Week", "Year")]
-  box_gpu_month <- ggplot(dataset, 
+  box_fea_month <- ggplot(dataset, 
                           aes(x = Month, y = get(feature))) + 
     geom_boxplot(varwidth = T, fill = "lightblue") + 
     labs(tittle = "Boxplot", 
-         subtitle = paste(feature, "by Month"), 
+         subtitle = paste(feature_lab, "per Month"), 
          x = "Month",
-         y = paste(feature))
+         y = feature_lab)
   
-  box_gpu_week <- ggplot(dataset, 
+  box_fea_week <- ggplot(dataset, 
                          aes(x = Week, y  = get(feature))) + 
     geom_boxplot(varwidth = T, fill = "lightblue") + 
     labs(tittle = "Boxplot", 
-         subtitle = paste(feature, "by Weekday"), 
+         subtitle = paste(feature_lab, "per Weekday"), 
          x = "Weekday",
-         y = paste(feature))  
+         y = feature_lab)  
   
-  box_gpu_year <- ggplot(dataset, 
+  box_fea_year <- ggplot(dataset, 
                          aes(x = Year, y = get(feature))) + 
     geom_boxplot(varwidth = T, fill = "lightblue") + 
     labs(tittle = "Boxplot", 
-         subtitle = paste(feature, "by Year"), 
+         subtitle = paste(feature_lab, "per Year"), 
          x = "Year",
-         y = paste(feature)) 
+         y = feature_lab) 
   
   ggsave(filename=paste(filepath, feature, "_boxplot.png", sep = ""), 
-         plot=grid.arrange(box_gpu_week,
-                           box_gpu_month,
-                           box_gpu_year),
+         plot=grid.arrange(box_fea_week,
+                           box_fea_month,
+                           box_fea_year),
          width = 10, height = 8, dpi = 100)
   
 }
@@ -146,8 +141,9 @@ GetBoxplot = function(dataset, group, feature, filepath){
 # @group: group by certain group
 # @feature: the feature we want to check
 # @filepath: path to save the image
+# @feature_lab: x-label of the plots.
 # Return: pictures saved in specified filepath
-GetDensityplot = function(dataset, group, feature, filepath){
+GetDensityplot = function(dataset, group, feature, filepath, feature_lab){
   dataset$Month = factor(dataset$Month, levels = month.abb)
   dataset$Week = factor(dataset$Week, 
                         levels = c("Mon", "Tue", "Wed",
@@ -160,8 +156,8 @@ GetDensityplot = function(dataset, group, feature, filepath){
     geom_density() + 
     theme(legend.position="none") +
     labs(tittle = "Density plot", 
-         subtitle = paste(feature, "by Month"), 
-         x = feature,
+         subtitle = paste(feature_lab, "by Month"), 
+         x = feature_lab,
          y = "Density")
   
   density_week = ggplot(dataset, 
@@ -170,8 +166,8 @@ GetDensityplot = function(dataset, group, feature, filepath){
     geom_density() + 
     theme(legend.position="none") +
     labs(tittle = "Density plot", 
-         subtitle = paste(feature, "by Week"), 
-         x = feature,
+         subtitle = paste(feature_lab, "by Week"), 
+         x = feature_lab,
          y = "Density")
   
   density_year = ggplot(dataset, 
@@ -180,8 +176,8 @@ GetDensityplot = function(dataset, group, feature, filepath){
     geom_density() + 
     theme(legend.position="none") +
     labs(tittle = "Density plot", 
-         subtitle = paste(feature, "by Year"), 
-         x = feature,
+         subtitle = paste(feature_lab, "by Year"), 
+         x = feature_lab,
          y = "Density")
   
   
@@ -200,7 +196,7 @@ GetDensityplot = function(dataset, group, feature, filepath){
 # @filepath: path to save the image
 # @ma_order a scale
 # Return: pictures saved in specified filepath
-GetMAplot = function(dataset, feature, group, ma_order, filepath){
+GetMAplot = function(dataset, feature, group, ma_order, filepath, feature_lab){
   dataset_ma <- dataset
   dataset_ma[,"ma_order"] <- forecast::ma(dataset[, feature], order = ma_order)
   
@@ -213,9 +209,9 @@ GetMAplot = function(dataset, feature, group, ma_order, filepath){
     guides(alpha = FALSE) +
     theme(legend.position="none") +
     labs(tittle = "Moving Average Plot", 
-         subtitle = paste(feature, "average per", ma_order, "days"), 
+         subtitle = paste(feature_lab, "average per", ma_order, "days"), 
          x = "Time",
-         y = feature) 
+         y = feature_lab) 
   ggsave(filename=paste(filepath, feature, "_maplot.png", sep = ""), 
          plot=grid.arrange(ma_gpu),
          width = 10, height = 8, dpi = 100)
@@ -287,6 +283,71 @@ ArimaModel <- function(tuning_set, p = 11, q = 0,
   return(pred_ls)
 }
 
+# Sumamry: get the prediction from lightgbm model.
+# @tuning_set: dataframe of time series, must include the feature gcu_seconds and memory_gib_seconds.
+# @forcast_time: the length of next prediction interval.
+# @predict_set: certain predictors to be added in the model (not for ARIMA model, just be consistent with VAR model).
+# @y_feature: certain response variables to be considered.
+# @x_features: certain explainatory variables to be considered.
+# @features_cat: categorical variables in x_features.
+# Return: Prediction of the correponding features.
+LgbmModel <- function(tuning_set,  
+                      forcast_time = 30, 
+                      y_feature = features, 
+                      x_features = x_features,
+                      features_cat = features_cat,
+                      predict_set = validation_set
+) {
+  
+  train_data <- Matrix(as.matrix(tuning_set[, x_features]), sparse=TRUE)
+  test_data  <- Matrix(as.matrix(predict_set[, x_features]), sparse=TRUE)
+  pred_ls <- list()
+  pred_tmp <- NULL
+  for (i in y_feature) {
+    train_lgbm = lgb.Dataset(data=train_data, label=tuning_set[, i])
+    
+    para_grid <- list(objective = "regression",
+                      metric = "l2",
+                      bagging_fraction = 0.8,
+                      bagging_freq = 10,
+                      feature_fraction = 0.8,
+                      min_data_in_bin = 20,
+                      min_gain_to_split = 0.001,
+                      is_unbalance = TRUE)
+    
+    model_cv <- lgb.cv(params = para_grid, 
+                       data = train_lgbm, 
+                       learning_rate = 0.001, 
+                       num_leaves = 10,
+                       num_threads = 4, 
+                       nrounds = 5000, 
+                       early_stopping_rounds = 50,
+                       eval = "l2",
+                       categorical_feature = features_cat, 
+                       nfold = 20, 
+                       stratified = T,
+                       seed = 123)
+    
+    lgb_fit <- lgb.train(params = para_grid, 
+                         data = train_lgbm, 
+                         learning_rate = 0.001,
+                         num_leaves = 10, 
+                         num_threads = 4, 
+                         nrounds = model_cv$best_iter,
+                         eval_freq = 20, 
+                         eval = "l2",
+                         categorical_feature = features_cat)
+    
+    prediction_percell <- predict(lgb_fit, test_data)
+    pred_tmp <- cbind(pred_tmp, prediction_percell)
+  }
+  
+  
+  colnames(pred_tmp) <- y_feature
+  pred_ls[["prediction"]] <- as.data.frame(pred_tmp)
+  
+  return(pred_ls)
+}
 
 ## VAR model
 
@@ -297,8 +358,8 @@ ArimaModel <- function(tuning_set, p = 11, q = 0,
 # Return: list of training and test set split
 SplitData <- function(dataset, interval = 10, hold_day = 30)  {
   split_ls <- list()
-  for (i in 1:floor(hold_day / interval)) {
-    cutoff <- (nrow(dataset) - interval*i)
+  for (i in 1:(hold_day - interval + 1)) {
+    cutoff <- (nrow(dataset) - interval + 1 - i)
     train_set <- dataset[1:cutoff,]
     test_set <- dataset[(cutoff+1):(cutoff+interval),]
     split_ls[[i]] <- list("train_set" = train_set, "test_set" = test_set)
@@ -315,12 +376,11 @@ SplitData <- function(dataset, interval = 10, hold_day = 30)  {
 ExpandData <- function(features, dataset, lag_num) {
   X_expand <- list()
   for (i in 1:length(features)) {
-    X_expand[[i]] <- t(sapply(1:(nrow(dataset)-lag_num), function(x) dataset[x:(x+lag_num-1),i]))
+    X_expand[[i]] <- t(sapply(1:(nrow(dataset)-lag_num), function(x) dataset[x:(x+lag_num-1), features[i]]))
   }
   X_expand <- do.call("cbind", X_expand)
   return(X_expand)
 }
-
 
 
 ## For VAR model, I have three options:
@@ -336,7 +396,6 @@ ExpandData <- function(features, dataset, lag_num) {
 # @pred_test: dataframe of prediction set
 # @i: the selected observation of pred_test
 # Return: a dataframe of expanded data with previous prediction
-# NOTE: should be improved
 GetNewObs <- function(x_feature, y_feature, 
                       test_set, pred_test, i) {
   new_obs <- c()
@@ -354,83 +413,123 @@ GetNewObs <- function(x_feature, y_feature,
   return(new_obs)
 }
 
-# Sumamry: Get the next several predictions
-# @interval: predict next interval
-# @X: input predictor matrix (similar dimensions to train_set)
-# @features: names of predictors
-# @lag_num: the number of lags to be selected
-# @is.together controls whether use multivariate gaussian family
-# @current_add: whether we add current features in the data
-# @test_set: if current_add is true, then we need specify the test set, or default is null
-# @x_pred: specify whether predict all features
-# Return: a dataframe of predictions
-PredictVar <- function(interval, fit, X, 
-                       features, lag_num = 15, 
-                       current_add = F, test_set = NULL, 
-                       x_pred = F, is.together = T) {
+
+# Sumamry: Get the next several predictions only with time series themselves except other predictors.
+# @interval: predict next interval.
+# @fit: fitted models.
+# @X: input predictor matrix (similar dimensions to train_set).
+# @features: names of predictors.
+# @lag_num: the number of lags to be selected.
+# @is.together controls whether use multivariate gaussian family.
+# Return: a dataframe of predictions.
+PredictVarHelper <- function(interval, fit, X, 
+                             features, lag_num = 15,
+                             is.together = T) {
   pred_test <- matrix(0, nrow = interval, ncol = length(features))
   X_tmp <- as.matrix(X)
   
   newx_mat <- matrix(0, ncol = ncol(X)*lag_num, nrow = interval+1)
   newx_mat[1,] <- c(as.matrix(X))
   
-  
-  if (x_pred){
-    for ( i in 1:interval) {
-      newx <- t(newx_mat[i,])
-      if (is.together) {
-        pre_val <- predict(fit, newx = newx)
-      } else {
-        pre_val <- c()
-        for (j in 1:length(features)) {
-          pre_val[j] <- predict(fit[[j]], newx = newx)
-        }
+  for ( i in 1:interval) {
+    newx <- t(newx_mat[i,])
+    if (is.together) {
+      pre_val <- predict(fit, newx = newx)
+    } else {
+      pre_val <- c()
+      for (j in 1:length(features)) {
+        pre_val[j] <- predict(fit[[j]], newx = newx)
       }
-      
-      pred_test[i,] <- pre_val
-      X_tmp <- rbind(X_tmp, pred_test[i,])
-      newx_mat[i+1,] <- c(X_tmp[(1+i):(lag_num+i),]) 
     }
-  } else {
-    x_feature <- colnames(X)
-    x_feature_only <- setdiff(x_feature, features)
+    
+    pred_test[i,] <- pre_val
+    X_tmp <- rbind(X_tmp, pred_test[i,])
+    newx_mat[i+1,] <- c(X_tmp[(1+i):(lag_num+i),]) 
+  }
+  colnames(pred_test) <- features
+  return(pred_test)
+}
+
+# Sumamry: Get the next several predictions both with time series themselves and other predictors.
+# @interval: predict next interval.
+# @fit: fitted models.
+# @X: input predictor matrix (similar dimensions to train_set).
+# @features: names of predictors.
+# @lag_num: the number of lags to be selected.
+# @is.together controls whether use multivariate gaussian family.
+# @current_add: whether we add current features in the data.
+# @test_set: if current_add is true, then we need specify the test set, or default is null.
+# Return: a dataframe of predictions.
+PredictVarPredictorHelper <- function(interval, fit, 
+                                      X, features, lag_num = 15, 
+                                      current_add = F, test_set = NULL, 
+                                      is.together = T) {
+  pred_test <- matrix(0, nrow = interval, ncol = length(features))
+  X_tmp <- as.matrix(X)
+  newx_mat <- matrix(0, ncol = ncol(X)*lag_num, nrow = interval+1)
+  newx_mat[1,] <- c(as.matrix(X))
+  x_feature <- colnames(X)
+  x_feature_only <- setdiff(x_feature, features)
+  
+  if (current_add) {
+    newx_mat <- cbind(newx_mat, 
+                      matrix(0, nrow = nrow(newx_mat), ncol = length(x_feature_only)))
+    newx_mat[1, (ncol(newx_mat) - length(x_feature_only) + 1):ncol(newx_mat)] <- 
+      as.matrix(test_set[1, x_feature_only])
+    test_set <- rbind(test_set, 0)
+  } 
+  
+  for ( i in 1:interval) {
+    newx <- t(newx_mat[i,])
+    
+    if (is.together) {
+      pre_val <- predict(fit, newx = newx)
+    } else {
+      pre_val <- c()
+      for (j in 1:length(features)) {
+        pre_val[j] <- predict(fit[[j]], newx = newx)
+      }
+    }
+    pred_test[i,] <- pre_val
+    
+    # fill with column names
+    new_obs <- GetNewObs(x_feature = x_feature, y_feature = features, test_set, pred_test, i) 
+    X_tmp <- rbind(X_tmp, new_obs)
     
     if (current_add) {
-      newx_mat <- cbind(newx_mat, 
-                        matrix(0, nrow = nrow(newx_mat), ncol = length(x_feature_only)))
-      newx_mat[1, (ncol(newx_mat) - length(x_feature_only) + 1):ncol(newx_mat)] <- 
-        as.matrix(test_set[1, x_feature_only])
-      test_set <- rbind(test_set, 0)
-    } 
-    
-    for ( i in 1:interval) {
-      newx <- t(newx_mat[i,])
-      
-      if (is.together) {
-        pre_val <- predict(fit, newx = newx)
-      } else {
-        pre_val <- c()
-        for (j in 1:length(features)) {
-          pre_val[j] <- predict(fit[[j]], newx = newx)
-        }
-      }
-      pred_test[i,] <- pre_val
-      
-      # fill with column names
-      new_obs <- GetNewObs(x_feature = x_feature, y_feature = features, test_set, pred_test, i) 
-      X_tmp <- rbind(X_tmp, new_obs)
-      
-      if (current_add) {
-        newx_mat[i+1,] <- c(c(X_tmp[(1+i):(lag_num+i),]), as.matrix(test_set[i+1, x_feature_only]))
-      } else {
-        newx_mat[i+1,] <- c(X_tmp[(1+i):(lag_num+i),]) 
-      }
+      newx_mat[i+1,] <- c(c(X_tmp[(1+i):(lag_num+i),]), as.matrix(test_set[i+1, x_feature_only]))
+    } else {
+      newx_mat[i+1,] <- c(X_tmp[(1+i):(lag_num+i),]) 
     }
-    
   }
   
   colnames(pred_test) <- features
-  
+  return(pred_test)
+}
+# Sumamry: Get the next several predictions.
+# @interval: predict next interval.
+# @fit: fitted models.
+# @X: input predictor matrix (similar dimensions to train_set).
+# @features: names of predictors.
+# @lag_num: the number of lags to be selected.
+# @is.together controls whether use multivariate gaussian family.
+# @current_add: whether we add current features in the data.
+# @test_set: if current_add is true, then we need specify the test set, or default is null.
+# Return: a dataframe of predictions.
+PredictVar <- function(interval, fit, X, 
+                       features, lag_num = 15, 
+                       current_add = F, test_set = NULL, 
+                       x_pred = F, is.together = T) {
+
+  if (x_pred){
+    pred_test <- PredictVarHelper(interval, fit, X, 
+                                 features, lag_num = lag_num,
+                                 is.together = is.together)
+  } else {
+    pred_test <- PredictVarPredictorHelper(interval, fit, X, 
+                                           features, lag_num = lag_num,
+                                           is.together = is.together)
+  }
   return(list("pred" = pred_test))#, "error" = error))
 }
 
@@ -440,7 +539,7 @@ PredictVar <- function(interval, fit, X,
 # @lambda: tuning parameter, either a vector or a scalar 
 # @y_feature: the name of response time series only
 # @x_feature: the name of time series in the predictor
-# @weights: whether use equal weighted or weighted MSE to fit the model
+# @weights: given weights by use equal weighted or weighted MSE to fit the model
 # @is.together controls whether use multivariate gaussian family
 # @interval: the prediction interval for forward corss-validation
 # @current_add: whether we add current features in the data
@@ -519,22 +618,310 @@ VarFit <- function(train_set, lag_num = 15, lambda,
 }
 
 
-# Sumamry: Forward validation for select tuning parameters
-# @dataset: the dataframe to train the model
-# @tuning_interval: the length of interval of test set in parameter tuning procedure
-# @lambda: tuning parameter, either a vector or a scalar 
-# @hold_day: the number of hold out day to tune the model
-# @lag_num: number of lags to be considered
-# @x_feature: the name of time series in the predictor
-# @y_feature: the name of response time series only
-# @is.together controls whether use multivariate gaussian family
-# @weight_type: whether use equal weighted or weighted MSE to fit the model
-# @forcast_time: the prediction interval for forward corss-validation
-# @predict_set: the test set to tune the parameter
-# @x_pred: specify whether predict all features
-# @current_add: whether we add current features in the data
-# @tuning_parameter: specify the tuning parameter
-# Return: Predictions for next intervals and the tuning parameter
+# Sumamry: Help function for VarModel.
+# @data_norm: the dataframe to train the model.
+# @lag_num: number of lags to be considered.
+# @tune_type: whether use moving forward or expanding forward to tune the parameter.
+# @lambda: tuning parameter, either a vector or a scalar .
+# @y_feature: the name of response time series only.
+# @x_feature: the name of time series in the predictor.
+# @weight_type: whether use equal weighted or weighted MSE to fit the model.
+# @is.together controls whether use multivariate gaussian family.
+# @interval: the prediction interval for forward corss-validation.
+# @current_add: whether we add current features in the data.
+# @test_set: if current_add is true, then we need specify the test set, or default is null.
+# @x_pred: specify whether predict all features.
+# Return: the optimal tuning parameter.
+VarModelForwardTune <- function(data_norm, 
+                                y_feature, 
+                                x_feature,
+                                tuning_interval, 
+                                hold_day, 
+                                is.together, 
+                                tune_type, 
+                                lag_num, 
+                                lambda,
+                                weight_type,
+                                x_pred = x_pred,
+                                current_add, 
+                                test_set,
+                                y_feature_org) {
+  # Split data
+  data_split <- SplitData(data_norm, interval = tuning_interval, hold_day = hold_day)
+  
+  # Parameter tuning
+  if (is.together) {
+    mse = matrix(0, nrow = length(data_split), ncol = length(lambda))
+  } else {
+    mse = lapply(1:length(y_feature), function(x) matrix(0, nrow = length(data_split), ncol = length(lambda)))
+  }
+  
+  
+  for (i in 1:length(data_split)) {
+    
+    if (tune_type == "expand") {
+      train_set_start = 1
+    }
+    if (tune_type == "moving") {
+      train_set_start = 1 + (i - 1)*tuning_interval
+    }
+    train_set <- data_split[[i]]$train_set[train_set_start:nrow(data_split[[i]]$train_set), ]
+    test_set <- data_split[[i]]$test_set
+    
+    
+    if (weight_type == "equal") {
+      weights <- rep(1, nrow(train_set)-lag_num)
+    }
+    
+    if (weight_type == "weighted_uniform") {
+      weights <- (1 : (nrow(train_set)-lag_num)) / (nrow(train_set)-lag_num)
+    }
+    
+    if (weight_type == "weighted_exponential") {
+      weights <- exp((1 : (nrow(train_set)-lag_num))/ (nrow(train_set)-lag_num)) 
+    }
+    
+    for (j in 1:length(lambda)) {
+      res <- VarFit(train_set = train_set, 
+                    lag_num = lag_num, 
+                    lambda = lambda[j], 
+                    y_feature = y_feature, 
+                    x_feature = x_feature, 
+                    weights = weights, 
+                    is.together = is.together, 
+                    interval = tuning_interval,
+                    x_pred = x_pred,
+                    current_add = current_add, 
+                    test_set = test_set)
+      if (is.together) {
+        mse[i,j] <- mean(unlist((test_set[,y_feature_org] - res$pred[,y_feature_org])^2))
+      } else {
+        for (k in 1:length(mse)) {
+          mse[[k]][i,j] <- mean((test_set[,y_feature_org[k]] - res$pred[,y_feature_org[k]])^2)
+        }
+      }
+    }
+  }
+  
+  if (is.together) {
+    mse_cv <- apply(mse, 2, mean) 
+    plot(mse_cv, type = "l", col = 2)
+    lambda_min <- lambda[which.min(mse_cv)]
+  } else {
+    mse_cv <- lapply(mse, function(x) {
+      tmp <- apply(x, 2, mean)
+      plot(tmp, type = "l", col = 2)
+      return(tmp)
+    })
+    lambda_min <- lapply(mse_cv, function(x) lambda[which.min(x)])
+  }
+  return(lambda_min)
+}
+
+
+# Sumamry: Help function for VarModelUniformTune.
+# @train_set: the dataframe to train the model.
+# @lag_num: number of lags to be considered.
+# @lambda: tuning parameter, either a vector or a scalar .
+# @y_feature: the name of response time series only.
+# @x_feature: the name of time series in the predictor.
+# @weights: given weights by use equal weighted or weighted MSE to fit the model.
+# @is.together controls whether use multivariate gaussian family.
+# @current_add: whether we add current features in the data.
+# @test_set: if current_add is true, then we need specify the test set, or default is null.
+# @x_pred: specify whether predict all features.
+# Return: the optimal tuning parameter.
+VarFitUniform <- function(train_set, lag_num = 15, lambda, 
+                          y_feature, x_feature, weights = NULL, 
+                          is.together = T, x_pred = T,
+                          current_add = F, test_ind = NULL) {
+  
+  n <- nrow(train_set)
+  Y <- train_set[(lag_num+1):n, y_feature]
+  X <- train_set[, x_feature]
+  
+  # Re-construct data
+  X_expand <- ExpandData(x_feature, X, lag_num)
+  
+  # The third options
+  if (current_add) {
+    x_feature_only <- setdiff(x_feature, y_feature)
+    X_expand <- cbind(X_expand, train_set[(lag_num+1):n, x_feature_only])
+  }
+  
+  
+  X <- X_expand
+  
+  # Fit model
+  if (is.together){
+    family = "mgaussian"
+    fit <- glmnet(X, Y, weights = weights, lambda = lambda, family = family)
+    
+    # Predict
+    pred_mat <- NULL
+    for (i in 1:length(test_ind)) {
+      test_ind_i <- test_ind[i]
+      X_new <- train_set[(test_ind_i - lag_num + 1 - i):(test_ind_i - i), x_feature]
+      
+      pred_test <- PredictVar(interval = 1, 
+                              fit = fit, 
+                              X = X_new, 
+                              features = y_feature, 
+                              lag_num = lag_num, 
+                              current_add = current_add, 
+                              test_set = NULL, 
+                              x_pred = x_pred,
+                              is.together = is.together)
+      pred_mat <- rbind(pred_mat, pred_test$pred)
+    }
+    
+  }else{
+    family = "gaussian"
+    error <- NULL
+    fit_ls <- list()
+    
+    for (i in 1:length(y_feature)) {
+      if (is.list(lambda)) {
+        lambda_sel <- lambda[[i]]
+      } else {
+        lambda_sel <- lambda
+      }
+      fit <- glmnet(X, c(Y[,i]), weights = weights, lambda = lambda_sel, family = family)
+      fit_ls[[i]] <- fit
+    }
+    
+    # Predict
+    pred_mat <- NULL
+    for (i in 1:length(test_ind)) {
+      test_ind_i <- test_ind[i]
+      X_new <- train_set[(test_ind_i - lag_num + 1 - i):(test_ind_i - i), x_feature]
+      
+      pred_test <- PredictVar(interval = 1, 
+                              fit = fit_ls, 
+                              X = X_new, 
+                              features = y_feature, 
+                              lag_num = lag_num, 
+                              current_add = current_add, 
+                              test_set = NULL, 
+                              x_pred = x_pred, 
+                              is.together = is.together)
+      pred_mat <- rbind(pred_mat, pred_test$pred)
+    }
+    
+  }
+  
+  
+  return(list("pred" = pred_mat))
+}
+
+
+# Sumamry: Help function for VarModel. Tune the parameter by uniformly selecting test data.
+# @data_norm: the dataframe to train the model.
+# @lag_num: number of lags to be considered.
+# @tune_type: just to be consistent with VarModelForwardTune.
+# @lambda: tuning parameter, either a vector or a scalar .
+# @y_feature: the name of response time series for model fitting.
+# @x_feature: the name of time series in the predictor.
+# @y_feature_org: the name of response time series for output only.
+# @weight_type: whether use equal weighted or weighted MSE to fit the model.
+# @is.together controls whether use multivariate gaussian family.
+# @interval: the prediction interval for forward corss-validation.
+# @current_add: whether we add current features in the data.
+# @test_set: if current_add is true, then we need specify the test set, or default is null.
+# @x_pred: specify whether predict all features.
+# Return: the optimal tuning parameter.
+VarModelUniformTune <- function(data_norm, 
+                                y_feature, 
+                                x_feature, 
+                                hold_day, 
+                                is.together, 
+                                tune_type, 
+                                lag_num, 
+                                lambda,
+                                weight_type,
+                                x_pred = x_pred,
+                                current_add, 
+                                test_set = NULL,
+                                y_feature_org) {
+  # Parameter tuning
+  if (is.together) {
+    mse = rep(0, length(lambda))
+  } else {
+    mse = lapply(1:length(y_feature), function(x) rep(0, length(lambda)))
+  }
+  
+  # Split data
+  n = nrow(data_norm)
+  test_ind <- floor(seq.int(1+lag_num, n, by = lag_num)) 
+  
+  train_set <- data_norm[-test_ind,]
+  test_set <- data_norm[test_ind,]
+  
+  if (weight_type == "equal") {
+    weights <- rep(1, nrow(train_set)-lag_num)
+  }
+  
+  if (weight_type == "weighted_uniform") {
+    weights <- (1 : (nrow(train_set)-lag_num)) / (nrow(train_set)-lag_num)
+  }
+  
+  if (weight_type == "weighted_exponential") {
+    weights <- exp((1 : (nrow(train_set)-lag_num))/ (nrow(train_set)-lag_num)) 
+  }
+  
+  for (j in 1:length(lambda)) {
+    res <- VarFitUniform(train_set = train_set, 
+                         lag_num = lag_num, 
+                         lambda = lambda[j], 
+                         y_feature = y_feature, 
+                         x_feature = x_feature, 
+                         weights = weights, 
+                         is.together = is.together, 
+                         x_pred = x_pred,
+                         current_add = current_add, 
+                         test_ind = test_ind)
+    if (is.together) {
+      mse[j] <- mean(unlist((test_set[,y_feature_org] - res$pred[,y_feature_org])^2))
+    } else {
+      for (k in 1:length(mse)) {
+        mse[[k]][j] <- mean((test_set[,y_feature_org[k]] - res$pred[,y_feature_org[k]])^2)
+      }
+    }
+  }
+  
+  
+  if (is.together) {
+    mse_cv <- mse
+    plot(mse_cv, type = "l", col = 2)
+    lambda_min <- lambda[which.min(mse_cv)]
+  } else {
+    mse_cv <- lapply(mse, function(x) {
+      tmp <- x
+      plot(tmp, type = "l", col = 2)
+      return(tmp)
+    })
+    lambda_min <- lapply(mse_cv, function(x) lambda[which.min(x)])
+  }
+  return(lambda_min)
+}
+
+
+# Sumamry: Select tuning parameters and get predictions.
+# @dataset: the dataframe to train the model.
+# @tuning_interval: the length of interval of test set in parameter tuning procedure.
+# @lambda: tuning parameter, either a vector or a scalar .
+# @hold_day: the number of hold out day to tune the model.
+# @lag_num: number of lags to be considered.
+# @x_feature: the name of time series in the predictor.
+# @y_feature: the name of response time series only.
+# @is.together controls whether use multivariate gaussian family.
+# @weight_type: whether use equal weighted or weighted MSE to fit the model.
+# @forcast_time: the prediction interval for forward corss-validation.
+# @predict_set: the test set to tune the parameter.
+# @x_pred: specify whether predict all features.
+# @current_add: whether we add current features in the data.
+# @tuning_parameter: specify the tuning parameter.
+# Return: Predictions for next intervals and the tuning parameter.
 VarModel <- function(dataset, tuning_interval = 10, lambda = seq(0.0001,0.005, length.out = 20), 
                      hold_day = 30, lag_num = 15, x_feature = x_feature, y_feature = y_feature,
                      is.together = T, weight_type = "equal", forcast_time = forcast_time,
@@ -555,77 +942,37 @@ VarModel <- function(dataset, tuning_interval = 10, lambda = seq(0.0001,0.005, l
   }
   
   if (is.null(tuning_parameter)) {
-    # Split data
-    data_split <- SplitData(data_norm, interval = tuning_interval, hold_day = hold_day)
-    
-    # Parameter tuning
-    if (is.together) {
-      mse = matrix(0, nrow = length(data_split), ncol = length(lambda))
-    } else {
-      mse = lapply(1:length(y_feature), function(x) matrix(0, nrow = length(data_split), ncol = length(lambda)))
+    if (tune_type %in% c("moving", "expand")) {
+      lambda_min <- VarModelForwardTune(data_norm, 
+                                        y_feature, 
+                                        x_feature,
+                                        tuning_interval, 
+                                        hold_day, 
+                                        is.together, 
+                                        tune_type, 
+                                        lag_num, 
+                                        lambda,
+                                        weight_type,
+                                        x_pred = x_pred,
+                                        current_add, 
+                                        test_set,
+                                        y_feature_org)
     }
-    
-    
-    for (i in 1:length(data_split)) {
-      if (tune_type == "expand") {
-        train_set_start = 1
-      }
-      if (tune_type == "moving") {
-        train_set_start = 1 + (i - 1)*tuning_interval
-      }
-      train_set <- data_split[[i]]$train_set[train_set_start:nrow(data_split[[i]]$train_set), ]
-      test_set <- data_split[[i]]$test_set
-      
-      if (weight_type == "equal") {
-        weights <- rep(1, nrow(train_set)-lag_num)
-      }
-      
-      if (weight_type == "weighted_uniform") {
-        weights <- (1 : (nrow(train_set)-lag_num)) / (nrow(train_set)-lag_num)
-      }
-      
-      if (weight_type == "weighted_exponential") {
-        weights <- exp(1 : (nrow(train_set)-lag_num) /  (nrow(train_set)-lag_num)) 
-      }
-      
-      for (j in 1:length(lambda)) {
-        res <- VarFit(train_set = train_set, 
-                      lag_num = lag_num, 
-                      lambda = lambda[j], 
-                      y_feature = y_feature, 
-                      x_feature = x_feature, 
-                      weights = weights, 
-                      is.together = is.together, 
-                      interval = tuning_interval,
-                      x_pred = x_pred,
-                      current_add = current_add, 
-                      test_set = test_set)
-        if (is.together) {
-          mse[i,j] <- mean(unlist((test_set[,y_feature_org] - res$pred[,y_feature_org])^2))
-        } else {
-          for (k in 1:length(mse)) {
-            mse[[k]][i,j] <- mean((test_set[,y_feature[k]] - res$pred[,y_feature[k]])^2)
-          }
-        }
-        
-        
-      }
+    if (tune_type == "uniform") {
+      lambda_min <- VarModelUniformTune(data_norm, 
+                                        y_feature, 
+                                        x_feature, 
+                                        hold_day, 
+                                        is.together, 
+                                        tune_type, 
+                                        lag_num, 
+                                        lambda,
+                                        weight_type,
+                                        x_pred = x_pred,
+                                        current_add, 
+                                        test_set = NULL,
+                                        y_feature_org)
     }
-    
-    if (is.together) {
-      mse_cv <- apply(mse, 2, mean) 
-      plot(mse_cv, type = "l", col = 2)
-      lambda_min <- lambda[which.min(mse_cv)]
-    } else {
-      mse_cv <- lapply(mse, function(x) {
-        tmp <- apply(x, 2, mean)
-        plot(tmp, type = "l", col = 2)
-        return(tmp)
-      })
-      lambda_min <- lapply(mse_cv, function(x) lambda[which.min(x)])
-    }
-    
-    
   } else {
     lambda_min <- tuning_parameter
   }
@@ -746,7 +1093,7 @@ ValidateModel <- function(validate_type = "expand",
                           model = ArimaModel, 
                           tuning_set = tuning_set, 
                           validation_set = validation_set, 
-                          validation_interval = 7, 
+                          validation_interval = 14, 
                           metric = "MSE", 
                           is.plot = TRUE, 
                           is.origin = TRUE, 
@@ -759,8 +1106,11 @@ ValidateModel <- function(validate_type = "expand",
                           ...
 ){
   
-  # validation_times = Prediction time - 1
-  validation_times <- floor(nrow(validation_set) / validation_interval-1)
+  first_season <- tuning_set[1:season,]
+  data_split <- SplitData(rbind(tuning_set[(season+1):nrow(tuning_set),], validation_set), 
+                          interval = validation_interval, 
+                          hold_day = nrow(validation_set))
+  validation_times <- length(data_split)
   
   res <- list()
   error <- lapply(1:length(features), function(x) NULL)
@@ -774,14 +1124,6 @@ ValidateModel <- function(validate_type = "expand",
                                      tranform_type = "log_diff",
                                      season = season,
                                      missingdata = missingdata)
-    # data_origin_all <- Backtransform(rbind(tuning_set, validation_set),
-    #                                  initial_data = initial_data,
-    #                                  features = features,
-    #                                  tranform_type = "log_diff",
-    #                                  season = 7,
-    #                                  missingdata = missingdata)
-    data_origin_all$date = rbind(tuning_set, validation_set)$date
-    validation_set_org <- data_origin_all[data_origin_all$date > tuning_set[nrow(tuning_set), "date"], ]
     data_origin_pred_ls <- list()
   }
   
@@ -790,61 +1132,44 @@ ValidateModel <- function(validate_type = "expand",
   
   
   
-  for (i in 0:validation_times) {
+  for (i in 1:validation_times) {
     if (validate_type == "expand") {
       tuning_set_start = 1
     }
     if (validate_type == "moving") {
-      tuning_set_start = 1 + i*validation_interval
+      tuning_set_start = 1 + (i - 1)
     }
-    index_sel <- 0:(i*validation_interval)
-    tune_set_new <- rbind(tuning_set, validation_set[index_sel, ])
-    
-    validate_date_start <- tune_set_new$date[nrow(tune_set_new)]
-    validation_set_new <- validation_set[validation_set$date > validate_date_start,][1:validation_interval,]
+    tune_set_new <- data_split[[i]]$train_set[tuning_set_start:nrow(data_split[[i]]$train_set), ]
+    validation_set_new <- data_split[[i]]$test_set
     
     if (is.null(tuning_parameter)) {
-      res[[i+1]] <- model(tune_set_new[(season+tuning_set_start):nrow(tune_set_new), ],
-                          forcast_time = validation_interval,
-                          predict_set = validation_set_new,
-                          y_feature = features,
-                          ...)
-      # tune_set_new2 <- tune_set_new[(season+tuning_set_start):nrow(tune_set_new), ]
-      # res[[i+1]] <- VarModel(dataset = tune_set_new2, tuning_interval = tuning_interval,
-      #                        lambda = lambda,
-      #                        hold_day = 30, lag_num = lag_num, x_feature = x_feature,
-      #                        y_feature = features,
-      #                        is.together = F, weight_type = weight_type,
-      #                        forcast_time = validation_interval,
-      #                        predict_set = validation_set_new,
-      #                        x_pred = T, current_add = F)
+      res[[i]] <- model(tune_set_new,
+                        forcast_time = validation_interval,
+                        predict_set = validation_set_new,
+                        y_feature = features,
+                        ...)
       
       if (is.tuning) {
-        tuning_parameter <- res[[i+1]]$tuning_parameter
+        tuning_parameter <- res[[i]]$tuning_parameter
       }
     } else {
-      res[[i+1]] <- model(tune_set_new[(season+tuning_set_start):nrow(tune_set_new), ],
-                          forcast_time = validation_interval,
-                          predict_set = validation_set_new,
-                          y_feature = features,
-                          tuning_parameter = tuning_parameter,
-                          ...)
-      # res[[i+1]] <- VarModel(dataset = tune_set_new[(season+tuning_set_start):nrow(tune_set_new), ], tuning_interval = tuning_interval,
-      #                        lambda = lambda,
-      #                        hold_day = 30, lag_num = lag_num, x_feature = x_feature,
-      #                        y_feature = features,
-      #                        is.together = F, weight_type = weight_type,
-      #                        forcast_time = validation_interval,
-      #                        predict_set = validation_set_new,
-      #                        x_pred = T, current_add = F, tuning_parameter = tuning_parameter)
+      res[[i]] <- model(tune_set_new,
+                        forcast_time = validation_interval,
+                        predict_set = validation_set_new,
+                        y_feature = features,
+                        tuning_parameter = tuning_parameter,
+                        ...)
     }
     
     time_diff <- tune_set_new[2, "date"] - tune_set_new[1, "date"]
     if (is.origin) {
-      validation_set_pred <- as.data.frame(rbind(as.matrix(tune_set_new[,features]), res[[i+1]]$prediction))
+      validation_set_pred <- as.data.frame(rbind(first_season[,features],
+                                                 as.matrix(data_split[[i]]$train_set[,features]), 
+                                                 res[[i]]$prediction))
       colnames(validation_set_pred) <- features
-      date_lab <- tune_set_new[, "date"]
-      date_lab <- c(date_lab, 
+      date_lab <- data_split[[i]]$train_set[, "date"]
+      date_lab <- c(first_season$date,
+                    date_lab, 
                     date_lab[length(date_lab)] + time_diff * (1:validation_interval))
       validation_set_pred$date <- date_lab
       data_origin_pred <- transform.fun(validation_set_pred,
@@ -854,89 +1179,100 @@ ValidateModel <- function(validate_type = "expand",
                                         season = season,
                                         missingdata = missingdata)
       
-      # data_origin_pred <- Backtransform(validation_set_pred,
-      #                                  initial_data = initial_data,
-      #                                  features = features,
-      #                                  tranform_type = "log_diff",
-      #                                  season = season,
-      #                                  missingdata = missingdata)
-
-      data_origin_pred <- data_origin_pred[(nrow(data_origin_pred) - validation_interval + 1): nrow(data_origin_pred), ]
-      validation_set_new_org <- validation_set_org[validation_set_org$date > validate_date_start,][1:validation_interval,]
+      data_origin_pred <- data_origin_pred[(nrow(validation_set_pred) - validation_interval + 1): nrow(data_origin_pred), ]
+      validation_set_new_org <- data_origin_all[data_origin_all$date > tune_set_new[nrow(tune_set_new), "date"],][1:validation_interval,]
       
       for (j in features) {
-        error[[j]][[i+1]] <- data_origin_pred[, j] - 
+        error[[j]][[i]] <- data_origin_pred[, j] - 
           validation_set_new_org[, j]
       }
-      data_origin_pred_ls[[i+1]] <- data_origin_pred
+      data_origin_pred_ls[[i]] <- data_origin_pred
       
     } else {
       
       for (j in features) {
-        error[[j]][[i+1]] <- res[[i+1]][, j] - 
+        error[[j]][[i]] <- res[[i]]$prediction[, j] - 
           validation_set_new[, j]
       }
       
     }
   }
   
-  if (metric == "MSE") {
-    eval_res <- lapply(features, function(x) mean(unlist(error[[x]])^2))
-  }
-  if (metric == "MAE") {
-    eval_res <- lapply(features, function(x) median(abs(unlist(error[[x]]))))
-  }
-  eval_res <- setNames(eval_res, features)
+  eval_res_mse <- lapply(features, function(x) mean(unlist(error[[x]])^2))
+  eval_res_mse <- setNames(eval_res_mse, features)
+  eval_res_mae <- lapply(features, function(x) median(abs(unlist(error[[x]]))))
+  eval_res_mae <- setNames(eval_res_mae, features)
   
-  pred_transform <- lapply(res, function(x) x$prediction)
+  
+  pred_transform <- lapply(res[seq(1, length(data_split), validation_interval)], function(x) x$prediction)
   pred_transform <- as.data.frame(do.call("rbind", pred_transform))
   pred_data_transform <- pred_transform
-  if (is.plot == TRUE) {
+  
+  if (is.origin) {
+    par(mfrow=c(2,2))
+    pred_data_org <- do.call("rbind", data_origin_pred_ls[seq(1, length(data_split), validation_interval)])
+    plot_data <- rbind(data_origin_all[1:nrow(tuning_set), c(features, "date")], pred_data_org)
+    pred_transform <- rbind(tuning_set[, features], pred_transform[, features])
     colnames(pred_transform) <- features
-    data_transform_all <- rbind(tuning_set, validation_set)
-    xlabel <- data_transform_all$date
-    
-    if (is.origin) {
-      par(mfrow=c(2,2))
-      pred_data_org <- do.call("rbind", data_origin_pred_ls)
-      tune_set_org <- data_origin_all[data_origin_all$date <= tuning_set[nrow(tuning_set), "date"], ]
-      plot_data <- rbind(tune_set_org[, c(features, "date")], pred_data_org)
-      pred_transform <- rbind(tuning_set[, features], pred_transform[, features])
-      for (j in features) {
-        # plot origin
-        # red line is the model prediction
-        plot(xlabel[1:nrow(plot_data)], plot_data[, j], type = "l", col = 2, ylab = j, xlab = "Time", main = "Original") 
-        lines(xlabel,data_origin_all[, j], col = 1)
-        abline(v = xlabel[nrow(tuning_set)], col = 3, lty = 2)
-        # axis(side=1, at=xtick, labels = FALSE)
-        
-        # plot transformed data
-        plot(xlabel[1:nrow(pred_transform)], pred_transform[, j], type = "l", col = 2, ylab = j, xlab = "Time", main = "Transformed") 
-        lines(xlabel,data_transform_all[, j], col = 1)
-        # abline(v = nrow(plot_data) - (1:(validation_times+1)*validation_interval), col = 3, lty = 2)
-        abline(v = xlabel[nrow(tuning_set)], col = 3, lty = 2)
-        
-      }
-      
-    }else {
-      par(mfrow=c(2,1))
-      # plot transformed data
-      for (j in features) {
-        # plot transformed data
-        plot(xlabel[1:nrow(pred_transform)], pred_transform[, j], type = "l", col = 2, ylab = j, xlab = "Time", main = "Transformed") 
-        lines(xlabel,data_transform_all[, j], col = 1)
-        abline(v = xlabel[nrow(tuning_set)], col = 3, lty = 2)
-      }
-    }
-    title(paste(as.character(substitute(model)), "for", validation_interval, "days prediction"), line = -1, outer = TRUE)
+  }else{
+    pred_data_org <- NULL
+  }
+  
+  if (is.plot == TRUE) {
+    ValidatePlots(tuning_set, validation_set, features, plot_data, data_origin_all, pred_transform, is.origin,
+                  main = paste(as.character(substitute(model)), "for", validation_interval, "days prediction")) 
   }
   return(
-    list("MSE" = eval_res, 
+    list("Metric" = list("mae" = eval_res_mae, "mse" = eval_res_mse), 
          "prediction_org" = pred_data_org, 
          "prediction_trans" = pred_data_transform, 
          "model" = res)
   )
   
+}
+
+# Sumamry: Get the plots for validation procedure.
+# @tuning_set: the dataframe of the tuning set
+# @validation_set: data to do model selection
+# @features: name of the features we want to transform.
+# @is.origin: whether show the results transformed back on the origin data
+# @plot_data: the back transformation function.
+# @data_origin_all: the original data before transfermation.
+# @pred_transform: the seasonality want to be added back.
+# @main: the caption of the plots.
+# Return the plots.
+ValidatePlots <- function(tuning_set, validation_set, features, plot_data, data_origin_all, pred_transform, is.origin,
+                          main) {
+  data_transform_all <- rbind(tuning_set, validation_set)
+  xlabel <- data_transform_all$date
+  
+  if (is.origin) {
+    par(mfrow=c(2,2))
+    for (j in features) {
+      # plot origin
+      # red line is the model prediction
+      plot(xlabel[1:nrow(plot_data)], plot_data[, j], type = "l", col = 2, ylab = j, xlab = "Time", main = "Original") 
+      lines(xlabel,data_origin_all[, j], col = 1)
+      abline(v = xlabel[nrow(tuning_set)], col = 3, lty = 2)
+      
+      # plot transformed data
+      plot(xlabel[1:nrow(pred_transform)], pred_transform[, j], type = "l", col = 2, ylab = j, xlab = "Time", main = "Transformed") 
+      lines(xlabel,data_transform_all[, j], col = 1)
+      abline(v = xlabel[nrow(tuning_set)], col = 3, lty = 2)
+      
+    }
+    
+  }else {
+    par(mfrow=c(2,1))
+    # plot transformed data
+    for (j in features) {
+      # plot transformed data
+      plot(xlabel[1:nrow(pred_transform)], pred_transform[, j], type = "l", col = 2, ylab = j, xlab = "Time", main = "Transformed") 
+      lines(xlabel,data_transform_all[, j], col = 1)
+      abline(v = xlabel[nrow(tuning_set)], col = 3, lty = 2)
+    }
+  }
+  title(main, line = -1, outer = TRUE)
 }
 
 
@@ -984,6 +1320,8 @@ BaysianModel <- function(tuning_set,
 GetModelValTable <- function(model, is.tuning, ...) {
   validation_interval <- c(3, 7, 14)
   mse_var <- matrix(0, nrow = 2, ncol = length(validation_interval))
+  mae_var <- matrix(0, nrow = 2, ncol = length(validation_interval))
+  
   cutoff <- 7
   season <- 7
   tuning_set2 <- tuning_set
@@ -1007,10 +1345,12 @@ GetModelValTable <- function(model, is.tuning, ...) {
                                       ...
                                       
     )
-    mse_var[1,i] <- var_res_together$MSE$gcu
-    mse_var[2,i] <- var_res_together$MSE$mem
+    mse_var[1,i] <- var_res_together$Metric$mse$gcu_seconds
+    mse_var[2,i] <- var_res_together$Metric$mse$memory_gib_seconds
+    mae_var[1,i] <- var_res_together$Metric$mae$gcu_seconds
+    mae_var[2,i] <- var_res_together$Metric$mae$memory_gib_seconds
   }
-  return(mse_var)
+  return(list("mse" = mse_var, "mae" = mae_var))
 }
 
 # Summary tables for different VAR settings
@@ -1022,8 +1362,10 @@ GetModelValTable <- function(model, is.tuning, ...) {
 # Return: MSE for all features, and plots for the fitted value
 GetTunValTable <- function(tuning_set, is.together, lag_num = 28, weight_type = "equal", lambda = lambda) {
   validation_interval <- c(3, 7, 14)
-  hold_day <- 14
+  hold_day <- 21
   mse_var <- matrix(0, nrow = length(hold_day)*2, ncol = length(validation_interval))
+  mae_var <- matrix(0, nrow = length(hold_day)*2, ncol = length(validation_interval))
+  
   
   initial_data <- data_agg_sum[as.Date(data_agg_sum$date) == (as.Date(tuning_set[1,]$date)-1), ]
   
@@ -1048,7 +1390,7 @@ GetTunValTable <- function(tuning_set, is.together, lag_num = 28, weight_type = 
                                         lambda = lambda, 
                                         hold_day = hold_day_j, 
                                         lag_num = lag_num, 
-                                        x_feature = x_feature, 
+                                        x_feature = c("gcu_seconds", "memory_gib_seconds"), 
                                         is.together = is.together, 
                                         weight_type = weight_type,
                                         x_pred = T, 
@@ -1058,11 +1400,14 @@ GetTunValTable <- function(tuning_set, is.together, lag_num = 28, weight_type = 
                                         missingdata = missingdata,
                                         features = c("gcu_seconds", "memory_gib_seconds")
       )
-      mse_var[2*j-1,i] <- var_res_together$MSE$gcu
-      mse_var[2*j,i] <- var_res_together$MSE$mem
+      mse_var[2*j-1,i] <- var_res_together$Metric$mse$gcu_seconds
+      mse_var[2*j,i] <- var_res_together$Metric$mse$memory_gib_seconds
+      mae_var[2*j-1,i] <- var_res_together$Metric$mae$gcu_seconds
+      mae_var[2*j,i] <- var_res_together$Metric$mae$memory_gib_seconds
+      
     }
   }
-  return(mse_var)
+  return(list("mse" = mse_var, "mae" = mae_var))
   
 }
 

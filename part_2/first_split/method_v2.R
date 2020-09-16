@@ -12,7 +12,8 @@ library(lme4)
 library(strucchange)
 library(changepoint)
 library(mice)
-source("functions_v2.R")
+library(lightgbm)
+source("functions_v3.R")
 
 ####################################
 ##### Section 2: Preprocessing #####
@@ -20,18 +21,21 @@ source("functions_v2.R")
 
 ### Impute data ###
 # Remove future data.
-end_date <- as.POSIXlt("2018-03-28", tz = "America/Los_Angeles")
+change_date <- as.Date("2018-03-28", tz = "America/Los_Angeles")
 
 # Impute range: 2017-08-01 to 2017-09-01.
 # Read the original data to get the memory information.
 data_agg_sum <- readRDS("data_agg_sum.rds")
-data_impute_prep_mem <- data_agg_sum[data_agg_sum$date < end_date,]
-data_impute_prep_mem <- data_impute_prep_mem[data_impute_prep_mem$date <= as.POSIXct("2017-09-02", tz = "America/Los_Angeles") & 
-                                               data_impute_prep_mem$date >= as.POSIXct("2017-08-01", tz = "America/Los_Angeles"),
+data_agg_sum$date <- as.Date(data_agg_sum$date)
+data_impute_prep_mem <- data_agg_sum[data_agg_sum$date < change_date,]
+impute_start_date <- as.Date("2017-08-01", tz = "America/Los_Angeles")
+impute_end_date <- as.Date("2017-09-02", tz = "America/Los_Angeles")
+data_impute_prep_mem <- data_impute_prep_mem[data_impute_prep_mem$date <= impute_end_date & 
+                                               data_impute_prep_mem$date >= impute_start_date,
                                              ]
-data_impute_prep <- data_agg_sum[data_agg_sum$date < end_date,]
-data_impute_prep <- data_impute_prep[data_impute_prep$date > as.POSIXct("2017-09-02", tz = "America/Los_Angeles") | 
-                                       data_impute_prep$date < as.POSIXct("2017-08-01", tz = "America/Los_Angeles"),]
+data_impute_prep <- data_agg_sum[data_agg_sum$date < change_date,]
+data_impute_prep <- data_impute_prep[data_impute_prep$date > impute_end_date | 
+                                       data_impute_prep$date < impute_start_date,]
 data_impute_prep <- data_impute_prep[data_impute_prep$Month %in% month.abb[c(5:9)], ]
 summary(data_impute_prep)
 head(data_impute_prep)
@@ -42,64 +46,74 @@ fit_impute <- lm(gcu_seconds ~ memory_gib_seconds + Year + Month + Week + Day,
 summary(fit_impute)
 data_impute_gcu <- predict(fit_impute, data_impute_prep_mem)
 
-data_agg_sum[data_agg_sum$date <= as.POSIXct("2017-09-02", tz = "America/Los_Angeles") & 
-               data_agg_sum$date >= as.POSIXct("2017-08-01", tz = "America/Los_Angeles"), "gcu_seconds"] <- 
-  data_impute_gcu
+data_agg_sum[data_agg_sum$date <= impute_end_date & 
+               data_agg_sum$date >= impute_start_date, "gcu_seconds"] <- data_impute_gcu
 
 ### Transform data ###
 # Transform: take difference of log.
 features_name <- c("gcu_seconds", "memory_gib_seconds", "gpu")
-breaktime <- as.POSIXct("2018-03-28", tz = "America/Los_Angeles")
 
 data_agg_sum_trans_log <- as.data.frame(sapply(features_name, function(x) {
-  log(data_agg_sum[2:dim(data_agg_sum)[1], x]) - log(data_agg_sum[1:(dim(data_agg_sum)[1]-1), x])}))
-data_agg_sum_trans_log$date <- data_agg_sum$date[2:dim(data_agg_sum)[1]]
+  log(data_agg_sum[2:nrow(data_agg_sum), x]) - log(data_agg_sum[1:(nrow(data_agg_sum)-1), x])}))
+data_agg_sum_trans_log$date <- data_agg_sum$date[2:nrow(data_agg_sum)]
 data_agg_sum_trans_log$cell <- "total"
 
 # plots of the data after imputation
-GetLineplot(dataset = data_agg_sum_trans_log[data_agg_sum_trans_log$date < breaktime,], "cell", filepath = "plots/transform/impute_") 
+GetLineplot(dataset = data_agg_sum_trans_log[data_agg_sum_trans_log$date < change_date,], "cell", filepath = "plots/transform/impute_") 
 GetLineplot(dataset = data_agg_sum_trans_log, "cell", filepath = "plots/transform/impute_all_") 
 
 # Check the boxplots and density plots for transformed data and original data
 # Original data
 data_agg_org_sum_plt <- GetTimeInfo(data_agg_sum)
 data_agg_org_sum_plt <- data_agg_org_sum_plt[data_agg_sum$date <
-                                               as.POSIXlt("2018-03-27", tz = "America/Los_Angeles"),]
+                                               change_date,]
 
 GetBoxplot(dataset = data_agg_org_sum_plt, 
            group = "cell",
            feature = "gcu_seconds",
-           filepath = "./plots/org_sum_gcu_")
+           filepath = "./plots/org_sum_gcu_",
+           feature_lab = "GCU-Seconds")
 
 GetBoxplot(dataset = data_agg_org_sum_plt, 
            group = "cell",
            feature = "memory_gib_seconds",
-           filepath = "./plots/org_sum_mem_")
+           filepath = "./plots/org_sum_mem_",
+           feature_lab = "RAM (GiB) - Seconds")
 
 # Transformed data
 data_agg_trans_sum_plt <- GetTimeInfo(data_agg_sum_trans_log)
 data_agg_trans_sum_plt <- data_agg_trans_sum_plt[data_agg_trans_sum_plt$date <
-                                                   as.POSIXlt("2018-03-27", tz = "America/Los_Angeles"),]
+                                                   change_date,]
 
 GetBoxplot(dataset = data_agg_trans_sum_plt, 
            group = "cell",
            feature = "gcu_seconds",
-           filepath = "./plots/tran_sum_")
+           filepath = "./plots/tran_sum_",
+           feature_lab = "GCU-Seconds")
 
 GetBoxplot(dataset = data_agg_trans_sum_plt, 
            group = "cell",
            feature = "memory_gib_seconds",
-           filepath = "./plots/tran_sum_")
+           filepath = "./plots/tran_sum_",
+           feature_lab = "RAM (GiB) - Seconds")
 
-GetDensityplot(data_agg_trans_sum_plt, "cell", "gcu_seconds", "./plots/tran_sum_")
-GetDensityplot(data_agg_trans_sum_plt, "cell", "memory_gib_seconds", "./plots/tran_sum_")
+GetDensityplot(data_agg_trans_sum_plt, 
+               "cell", 
+               "gcu_seconds", 
+               "./plots/tran_sum_", 
+               "GCU-Seconds")
+GetDensityplot(data_agg_trans_sum_plt, 
+               "cell", 
+               "memory_gib_seconds", 
+               "./plots/tran_sum_", 
+               "RAM (GiB) - Seconds")
 plot(data_agg_trans_sum_plt$date, data_agg_trans_sum_plt$memory_gib_seconds, type = "l")
 plot(data_agg_trans_sum_plt$date, data_agg_trans_sum_plt$gcu_seconds, type = "l")
 
 ### Data cleanning ###
 # Remove observations that is unusual higher than others.
 data_agg_sum_trans_log <- data_agg_sum_trans_log[data_agg_sum_trans_log$date <
-                                                   as.POSIXlt("2018-04-28", tz = "America/Los_Angeles"),]
+                                                   as.Date("2018-04-28", tz = "America/Los_Angeles"),]
 upper_clean_gcu <- quantile(data_agg_sum_trans_log$gcu_seconds, 0.999)
 lower_clean_gcu <- quantile(data_agg_sum_trans_log$gcu_seconds, 0.001)
 upper_clean_mem <- quantile(data_agg_sum_trans_log$memory_gib_seconds, 0.995)
@@ -113,10 +127,13 @@ ind_clean_mem <- which(data_agg_sum_trans_log$memory_gib_seconds > upper_clean_m
 # Record the index and date for these unusual observations.
 missingdata <- as.data.frame(c(ind_clean_gcu, ind_clean_mem))
 colnames(missingdata) <- "index"
-missingdata$features <- rep(c("gcu_seconds", "memory_gib_seconds"), c(length(ind_clean_gcu), length(ind_clean_mem)))
+missingdata$features <- rep(c("gcu_seconds", "memory_gib_seconds"), 
+                            c(length(ind_clean_gcu), length(ind_clean_mem)))
 missingdata$original_data <- 0
-missingdata$original_data[1:length(ind_clean_gcu)] <- data_agg_sum_trans_log$gcu_seconds[ind_clean_gcu]
-missingdata$original_data[(length(ind_clean_gcu)+1):nrow(missingdata)] <- data_agg_sum_trans_log$memory_gib_seconds[ind_clean_mem]
+missingdata$original_data[1:length(ind_clean_gcu)] <- 
+  data_agg_sum_trans_log$gcu_seconds[ind_clean_gcu]
+missingdata$original_data[(length(ind_clean_gcu)+1):nrow(missingdata)] <- 
+  data_agg_sum_trans_log$memory_gib_seconds[ind_clean_mem]
 missingdata$date <- data_agg_sum_trans_log[missingdata$index, "date"]
 
 # Set these observations to NA for imputation.
@@ -125,7 +142,8 @@ data_agg_sum_trans_log_prep$memory_gib_seconds[ind_clean_mem] <- NA
 data_agg_sum_trans_log_prep$gcu_seconds[ind_clean_gcu] <- NA
 
 # Select the features except cell, date, and gpu to impute.
-data_agg_sum_trans_log_prep_mat <-as.matrix(cbind(data_agg_sum_trans_log_prep[, 5], data_agg_sum_trans_log_prep[, 6]))
+data_agg_sum_trans_log_prep_mat <-as.matrix(cbind(data_agg_sum_trans_log_prep[, 5], 
+                                                  data_agg_sum_trans_log_prep[, 6]))
 set.seed(123)
 imp_prep <- mice::mice(data_agg_sum_trans_log_prep[,1:6], meth="cart")
 imp_prep2 <- mice::complete(imp_prep)
@@ -164,8 +182,8 @@ data_agg_sum_trans_log2 <- de_seasonal(data_agg_sum_trans_log,
 # data_agg_sum_trans_log2_origin <- Backtransform(data_agg_sum_trans_log2,
 #                                                 initial_data = initial_data,
 #                                                 features = c("gcu_seconds", "memory_gib_seconds"),
-#                                                 tranform_type = "log_diff", 
-#                                                 season = season, 
+#                                                 tranform_type = "log_diff",
+#                                                 season = season,
 #                                                 missingdata = missingdata)
 # 
 # 
@@ -177,24 +195,28 @@ data_agg_sum_trans_log2 <- de_seasonal(data_agg_sum_trans_log,
 # Transformed data
 data_agg_trans_sum_plt_desea <- GetTimeInfo(data_agg_sum_trans_log2)
 data_agg_trans_sum_plt_desea <- data_agg_trans_sum_plt_desea[data_agg_trans_sum_plt_desea$date <
-                                                               as.POSIXlt("2018-03-27", tz = "America/Los_Angeles"),]
+                                                               change_date,]
 
 data_agg_trans_sum_plt_desea2 <- data_agg_trans_sum_plt_desea[8:nrow(data_agg_trans_sum_plt_desea),]
+saveRDS(data_agg_trans_sum_plt_desea2, "data_agg_trans_sum_plt_desea2.rds")
+
 GetBoxplot(dataset = data_agg_trans_sum_plt_desea2, 
            group = "cell",
            feature = "gcu_seconds",
-           filepath = "./plots/transform/desea_tran_sum_")
+           filepath = "./plots/transform/desea_tran_sum_", 
+           feature_lab = "GCU-Seconds")
 
 GetBoxplot(dataset = data_agg_trans_sum_plt_desea2, 
            group = "cell",
            feature = "memory_gib_seconds",
-           filepath = "./plots/transform/desea_tran_sum_")
+           filepath = "./plots/transform/desea_tran_sum_", 
+           feature_lab = "RAM (GiB) - Seconds")
 
 ### Change point detection ###
 season = 7
 strucchange::breakpoints(gcu_seconds~1, data = data_agg_sum_trans_log[(season+1):nrow(data_agg_sum_trans_log),])
 strucchange::breakpoints(memory_gib_seconds~1, data = data_agg_sum_trans_log[(season+1):nrow(data_agg_sum_trans_log),])
-strucchange::breakpoints(gcu_seconds~memory_gib_seconds, data = data_agg_sum_trans_log[(season+1):nrow(data_agg_sum_trans_log),]) #828 1095 
+strucchange::breakpoints(gcu_seconds~memory_gib_seconds, data = data_agg_sum_trans_log[(season+1):nrow(data_agg_sum_trans_log),]) 
 changepoint::cpt.mean(data_agg_sum_trans_log$gcu_seconds[(season+1):nrow(data_agg_sum_trans_log)], method = "PELT", Q = 10)
 changepoint::cpt.mean(data_agg_sum_trans_log$memory_gib_seconds[(season+1):nrow(data_agg_sum_trans_log)], method = "PELT", Q = 10)
 
@@ -227,16 +249,16 @@ for (i in features_name) {
 
 ### Split data ###
 # Get two week time after March 28, 2018 as the comparison set
-data_log_impute <- data_agg_sum_trans_log2
+data_log_impute <- data_agg_sum_trans_log2[, c("date", features_name)]
 hold_date <- 14
-end_date <- as.Date(as.POSIXlt("2018-03-28", tz = "America/Los_Angeles")) + hold_date
+end_date <- change_date + hold_date
 comparison_set <- data_log_impute[as.Date(data_log_impute$date) < end_date & 
-                                    as.Date(data_log_impute$date) >= as.Date(as.POSIXlt("2018-03-28", tz = "America/Los_Angeles")),]
+                                    as.Date(data_log_impute$date) >= change_date,]
 
 # Get one month time before March 28, 2018 as the hold out set to use walk forward validation test model
 data_log_impute <- data_agg_sum_trans_log2
 hold_date <- 30
-end_date <- as.Date(as.POSIXlt("2018-03-28", tz = "America/Los_Angeles")) - hold_date
+end_date <- change_date - hold_date
 train_set_all <- data_log_impute[as.Date(data_log_impute$date) < end_date,]
 holddout_set <- data_log_impute[as.Date(data_log_impute$date) >= end_date,]
 
@@ -246,11 +268,6 @@ end_date <- end_date - hold_date
 tuning_set <- train_set_all[as.Date(train_set_all$date) < end_date,]
 validation_set <- train_set_all[as.Date(train_set_all$date) >= end_date,]
 
-# Get two weeks time before previous end_date as the train set to train models and parameter tuning
-hold_date <- 14
-end_date <- end_date - hold_date
-train_set_tune <- tuning_set[as.Date(tuning_set$date) < end_date,]
-test_set_tune <- tuning_set[as.Date(tuning_set$date) >= end_date,]
 
 ###############################
 ##### Section 2: Modeling #####
@@ -261,8 +278,8 @@ features_select_disk_rm <- c("gcu_seconds", "memory_gib_seconds")
 for (i in features_select_disk_rm) {
   png(paste("plots/acf_tune_", i, ".png", sep = ""))
   par(mfrow=c(2,1))
-  acf(tuning_set[,i])
-  pacf(tuning_set[,i])
+  acf(tuning_set[,i], main = "Tuning set")
+  pacf(tuning_set[,i], main = "Tuning set")
   dev.off()
 }
 
@@ -270,12 +287,12 @@ for (i in features_select_disk_rm) {
 for (i in features_select_disk_rm) {
   png(paste("plots/acf_tune_16rm_", i, ".png", sep = ""))
   par(mfrow=c(2,1))
-  acf(tuning_set[365:nrow(tuning_set),i])
-  pacf(tuning_set[365:nrow(tuning_set),i])
+  acf(tuning_set[365:nrow(tuning_set),i], main = "Tuning set without 2016")
+  pacf(tuning_set[365:nrow(tuning_set),i], main = "Tuning set without 2016")
   dev.off()
 }
 
-p = 7
+p = 21
 q = 0
 forcast_time = 3
 
@@ -318,18 +335,29 @@ initial_data <- data_agg_sum[as.Date(data_agg_sum$date) == (as.Date(tuning_set[1
 lag_num <- 20
 season = 7
 cutoff = 365
+
 initial_data <- data_agg_sum[as.Date(data_agg_sum$date) == (as.Date(tuning_set[1,]$date)-1), ]
-res_notogether <- GetTunValTable(tuning_set, is.together = F, lag_num = lag_num + 10, lambda = seq(0.001,0.05,0.0005)) 
+res_notogether <- GetTunValTable(tuning_set, is.together = F, lag_num = lag_num + 10, 
+                                 lambda = 10^seq(-4,0,0.01)
+                                 ) 
 res_notogether_16rm <- GetTunValTable(rbind(data_agg_sum_trans_log[(cutoff - season + 1):cutoff,], 
-                                            tuning_set[cutoff:nrow(tuning_set),]), 
+                                            tuning_set[(cutoff + 1):nrow(tuning_set),]), 
                                       is.together = F, 
                                       lag_num = lag_num,
-                                      lambda = seq(0.00025,0.3,0.0025)) 
-res_together <- GetTunValTable(tuning_set, is.together = T, lag_num = lag_num + 10, lambda = seq(0.002,0.05,0.0005)) 
+                                      lambda = 10^seq(-4,0,0.01)
+                                      ) 
+res_together <- GetTunValTable(tuning_set, 
+                               is.together = T, 
+                               lag_num = lag_num + 10,
+                               lambda = 10^seq(-4,0,0.01)
+                               ) 
 res_together_16rm <- GetTunValTable(rbind(data_agg_sum_trans_log[(cutoff - season + 1):cutoff,], 
-                                          tuning_set[cutoff:nrow(tuning_set),]), is.together = T, lag_num = lag_num, 
-                                    lambda = seq(0.00025,0.03,0.00025)) 
-res_tunval_table <- rbind(res_notogether, res_notogether_16rm, res_together, res_together_16rm)
+                                          tuning_set[(cutoff + 1):nrow(tuning_set),]), 
+                                    is.together = T, 
+                                    lag_num = lag_num, 
+                                    lambda = 10^seq(-4,0,0.01)
+                                    ) 
+res_tunval_table <- rbind(res_notogether$mse, res_notogether_16rm$mse, res_together$mse, res_together_16rm$mse)
 colnames(res_tunval_table) <- c(3, 7, 14)
 rownames(res_tunval_table) <- rep(c("MSE_gcu", "MSE_memory"),4)
 saveRDS(res_tunval_table, "tables/res_tunval_table.rds")
@@ -338,21 +366,21 @@ res_tunval_table
 # uniform weighted
 weight_type = "weighted_uniform"
 
-res_notogether <- GetTunValTable(tuning_set, is.together = F, lag_num = lag_num, weight_type, lambda = seq(0.00005,0.005,0.00005)) 
+res_notogether <- GetTunValTable(tuning_set, is.together = F, lag_num = lag_num, weight_type, lambda = 10^seq(-4,0,0.01)) 
 res_notogether_16rm <- GetTunValTable(rbind(data_agg_sum_trans_log[(cutoff - season + 1):cutoff,], 
-                                            tuning_set[cutoff:nrow(tuning_set),]), 
+                                            tuning_set[(cutoff + 1):nrow(tuning_set),]), 
                                       is.together = F, 
                                       lag_num = lag_num, 
                                       weight_type,
-                                      lambda = seq(0.0025,0.1,0.0025)) 
-res_together <- GetTunValTable(tuning_set, is.together = T, lag_num = lag_num, weight_type, lambda = seq(0.000025,0.003,0.000025)) 
+                                      lambda = 10^seq(-4,0,0.01)) 
+res_together <- GetTunValTable(tuning_set, is.together = T, lag_num = lag_num, weight_type, lambda = 10^seq(-4,0,0.01)) 
 res_together_16rm <- GetTunValTable(rbind(data_agg_sum_trans_log[(cutoff - season + 1):cutoff,], 
-                                          tuning_set[cutoff:nrow(tuning_set),]), 
+                                          tuning_set[(cutoff + 1):nrow(tuning_set),]), 
                                     is.together = T, 
                                     lag_num = lag_num, 
                                     weight_type,
-                                    lambda = seq(0.005,0.08,0.0025)) 
-res_tunval_table <- rbind(res_notogether, res_notogether_16rm, res_together, res_together_16rm)
+                                    lambda = 10^seq(-4,0,0.01)) 
+res_tunval_table <- rbind(res_notogether$mse, res_notogether_16rm$mse, res_together$mse, res_together_16rm$mse)
 colnames(res_tunval_table) <- c(3, 7, 14)
 rownames(res_tunval_table) <- rep(c("MSE_gcu", "MSE_memory"),4)
 saveRDS(res_tunval_table, "tables/res_tunval_table_weight.rds")
@@ -360,21 +388,21 @@ res_tunval_table
 
 # exponential weighted
 weight_type = "weighted_exponential"
-res_notogether <- GetTunValTable(tuning_set, is.together = F, lag_num = lag_num, weight_type, lambda = seq(0.00005,0.01,0.00005)) 
+res_notogether <- GetTunValTable(tuning_set, is.together = F, lag_num = lag_num, weight_type, lambda = 10^seq(-4,0,0.01)) 
 res_notogether_16rm <- GetTunValTable(rbind(data_agg_sum_trans_log[(cutoff - season + 1):cutoff,], 
-                                            tuning_set[cutoff:nrow(tuning_set),]), 
+                                            tuning_set[(cutoff + 1):nrow(tuning_set),]), 
                                       is.together = F, 
                                       lag_num = lag_num, 
                                       weight_type,
-                                      lambda = seq(0.0025,0.1,0.0025)) 
-res_together <- GetTunValTable(tuning_set, is.together = T, lag_num = lag_num + 10, weight_type, lambda = seq(0.0025,0.05,0.0025)) 
+                                      lambda = 10^seq(-4,0,0.01)) 
+res_together <- GetTunValTable(tuning_set, is.together = T, lag_num = lag_num + 10, weight_type, lambda = 10^seq(-4,0,0.01)) 
 res_together_16rm <- GetTunValTable(rbind(data_agg_sum_trans_log[(cutoff - season + 1):cutoff,], 
-                                          tuning_set[cutoff:nrow(tuning_set),]), 
+                                          tuning_set[(cutoff + 1):nrow(tuning_set),]), 
                                     is.together = T, 
                                     lag_num = lag_num, 
                                     weight_type,
-                                    lambda = seq(0.0025,0.08,0.0025)) 
-res_tunval_table <- rbind(res_notogether, res_notogether_16rm, res_together, res_together_16rm)
+                                    lambda = 10^seq(-4,0,0.01)) 
+res_tunval_table <- rbind(res_notogether$mse, res_notogether_16rm$mse, res_together$mse, res_together_16rm$mse)
 colnames(res_tunval_table) <- c(3, 7, 14)
 rownames(res_tunval_table) <- rep(c("MSE_gcu", "MSE_memory"),4)
 saveRDS(res_tunval_table, "tables/res_tunval_table_expweight.rds")
@@ -382,28 +410,43 @@ res_tunval_table
 
 
 # Compare different models
-models <- c("MedianModel", "ArimaModel", "VAR", "BaysianModel" )
+# Median
+run_time <- c()
+models <- c("MedianModel", "ArimaModel", "VAR", "BaysianModel", "Lightbgm")
 validation_interval <- c(3, 7, 14)
 mse_var <- matrix(0, nrow = length(models)*2, ncol = length(validation_interval))
 
+sta <- Sys.time()
 model_median <-  GetModelValTable(model = MedianModel, 
                                   is.tuning = F
 )
+end <- Sys.time()
+run_time[1] <- end - sta
 
-lag_num = 14
+# ARIMA
+sta <- Sys.time()
+lag_num = 21
+auto.arima(tuning_set[, "gcu_seconds"])
+auto.arima(tuning_set[, "memory_gib_seconds"])
 model_arima <-  GetModelValTable(model = ArimaModel, 
                                  is.tuning = F,
                                  p = lag_num,
                                  q = 0
 )
+end <- Sys.time()
+run_time[2] <- end - sta
 
+# VAR
+sta <- Sys.time()
 x_feature <- c("gcu_seconds", "memory_gib_seconds")
 lag_num <- 20
 model_var <-  GetModelValTable(model = VarModel,
                                is.tuning = T,
                                tuning_interval = 7, 
-                               lambda = seq(0.0005,0.005,0.00005),
-                               hold_day = 14, 
+                               # lambda = seq(0.00005,0.006,0.00005),
+                               # lambda = seq(0.001,0.01,0.001),
+                               lambda = 10^seq(-4,0,0.01),
+                               hold_day = 21, 
                                lag_num = lag_num, 
                                x_feature = x_feature, 
                                is.together = F, 
@@ -411,14 +454,75 @@ model_var <-  GetModelValTable(model = VarModel,
                                x_pred = T, 
                                current_add = F,
                                season = 7)
+end <- Sys.time()
+run_time[3] <- end - sta
 
+# Baysian Model
+sta <- Sys.time()
 model_bays <-  GetModelValTable(model = BaysianModel, 
                                 is.tuning = F)
+end <- Sys.time()
+run_time[4] <- end - sta
 
-model_com_res <- rbind(model_median, model_arima, model_var, model_bays)
+# Lightbgm
+dataset <- rbind(tuning_set, validation_set)
+head(data_agg_sum)
+dataset <- cbind(dataset, data_agg_sum[2:(1 + nrow(dataset)), 1:4])
+dataset <- subset(dataset, select = -c(gpu, cell))
+features <- c("gcu_seconds", "memory_gib_seconds")
+features_cat <- setdiff(colnames(dataset), c(features, "date", "gpu", "cell"))
+lag_num <- 14
+n <- nrow(dataset)
+
+data_expand <- ExpandData(features=features, dataset=dataset, lag_num=lag_num)
+data_expand <- cbind(dataset[(lag_num+1):n, ], 
+                     data_expand)
+data_expand$date <- as.Date(data_expand$date)
+x_features <- setdiff(colnames(data_expand), c("date", features))
+data_expand$Month <- as.integer(factor(data_expand$Month, levels = month.abb, ordered = TRUE)) 
+levels(data_expand$Week) <- c("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")  
+data_expand$Week <- as.integer(data_expand$Week)
+data_expand$Year <- as.integer(data_expand$Year)
+data_expand$Day <- as.integer(data_expand$Day)
+
+tuning_set_expand <- data_expand[1:nrow(tuning_set),]
+validation_set_expand <- data_expand[(nrow(tuning_set) + 1):nrow(data_expand),]
+features_cat <- setdiff(colnames(data_agg_sum), c(features, "date", "cell", "gpu"))
+
+sta <- Sys.time()
+set.seed(123)
+initial_data <- data_agg_sum[as.Date(data_agg_sum$date) == (as.Date(tuning_set[1,]$date)-1), ]
+model_lgbm_err <- NULL
+for (i in c(3, 7, 14)) {
+  model_lgbm <- ValidateModel(validate_type = "moving",
+                              model = LgbmModel, 
+                              tuning_set = tuning_set_expand, 
+                              validation_set = validation_set_expand, 
+                              validation_interval = i, 
+                              metric = "MSE", 
+                              is.plot = T, 
+                              is.origin = T, 
+                              transform.fun = Backtransform, 
+                              initial_data = initial_data,
+                              is.tuning = F,
+                              season = 7,
+                              missingdata = missingdata,
+                              features = c("gcu_seconds", "memory_gib_seconds"),
+                              x_features = x_features,
+                              features_cat = features_cat
+  )
+  model_lgbm_err <- cbind(model_lgbm_err, unlist(model_lgbm$Metric$mse))
+}
+
+end <- Sys.time()
+run_time[5] <- end - sta
+
+model_com_res <- rbind(model_median$mse, model_arima$mse, model_var$mse, model_bays$mse)
 colnames(model_com_res) <- c(3, 7, 14)
-rownames(model_com_res) <- rep(c("MSE_gcu", "MSE_memory"),4)
+rownames(model_com_res) <- rep(c("MSE_gcu", "MSE_memory"), 4)
 saveRDS(model_com_res, "tables/model_com_res.rds")
+
+
 
 # Plots for VAR
 initial_data <- data_agg_sum[as.Date(data_agg_sum$date) == (as.Date(tuning_set[1,]$date)-1), ]
