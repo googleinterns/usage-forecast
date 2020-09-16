@@ -1,5 +1,3 @@
-
-# install.packages("tseries")
 # Import packages ---------------------------
 library(plyr)
 library(ggplot2)
@@ -12,19 +10,20 @@ library(reshape2)
 library(tseries)
 library(knitr)
 
-# Remove points with "-" in the cell
+# Exploratory analysis functions ---------------------------
+
+# Summary: Evaluate whether the string with "-".
 # @dataset is the vector 
-# Return True or False
+# Return: True or False
 IsDash <- function(dataset) {
   string_split <- strsplit(as.character(dataset), split = "")
   res <- lapply(string_split, function(x) "-" %in% x)
   return(unlist(res))
 }
 
-
-# Create day, week, month, year variables to summarize
-# @dataset is the matrix including date column
-# Return the matrix combined with the day, week, month, year information
+# Summary: Create day, week, month, year variables.
+# @dataset: dataframe with features, must include the feature `data`, which contains time information
+# Return: dataframe with day, week, month, and year variables
 GetTimeInfo <- function(dataset){
   time_stamp <- dataset$date
   time_info <- data.frame(cbind(format(time_stamp, "%b"),
@@ -37,30 +36,37 @@ GetTimeInfo <- function(dataset){
   return(time_info_merge)
 }
 
-# Pick up cells with date after 2018-03-28
-# @dataset is the matrix including date column with POSIXct type
-# @group is the string of certain group
+# Summary: Pick up cells with date after certain date
+# @dataset: the matrix including date column with POSIXct type
+# @group: the vector of feature names
 # @certain_date is the string form of date we want to check
-# Return the group name and True or False
+# Return: the group name and True or False
 IsAfterDate <- function(dataset, group, certain_date) {
   idx = ddply(dataset, .(get(group)), summarize, res = sort(date)[1] > 
                 as.POSIXct(certain_date))
   return(idx)
 }
 
+# Summary: De-season the time series
+# @dataset: the matrix or dataframe
+# @features: a vector of feature name
+# @season: the length of seasonality to de-season
+# @type: the type of de-seasoning procedure
+# Return: the dataframe of de-seasoned data
 de_seasonal <- function(dataset, features = c("gcu_seconds", "memory_gib_seconds"), season, type = "variance") {
   res <- dataset
   if (type == "diff") {
     res[(1+season):nrow(dataset), features] <- dataset[(1+season):nrow(dataset), features] - 
       dataset[1:(nrow(dataset)-season), features]
   }
-  if (type == "variance") {
-    mean_season <- lapply(1:season, function(x) {
-      apply(dataset[seq(x, nrow(dataset), season), features], 2, mean)
-    })
-    res[(1+season):nrow(dataset), features] <- dataset[(1+season):nrow(dataset), features] - 
-      apply(dataset[1:(nrow(dataset)-season), features], 2, mean)
-  }
+  # if (type == "variance") {
+  #   mean_season <- lapply(1:season, function(x) {
+  #     apply(dataset[seq(x, nrow(dataset), season), features], 2, mean)
+  #   })
+  #   
+  #   for (i in 1:length())
+  #   
+  # }
   return(res)
 }
 
@@ -69,11 +75,11 @@ de_seasonal <- function(dataset, features = c("gcu_seconds", "memory_gib_seconds
 # Visulazation ---------------------------
 # General plot by each second
 
-# Line plot across times
+# Summary: Line plot across times
 # @dataset: original time series
 # @group: group by certain group
 # @filepath: path to save the image
-# Return pictures saved in specified filepath
+# Return: pictures saved in specified filepath
 GetLineplot = function(dataset, group, filepath) {
   gg_gcu = ggplot(dataset, 
                   aes(x = as.Date(date), y = gcu_seconds, col = get(group))) + 
@@ -90,7 +96,7 @@ GetLineplot = function(dataset, group, filepath) {
          width = 10, height = 8, dpi = 100)
 }
 
-# Box plot by month, weekdays, year
+# Summary: Box plot by month, weekdays, year
 # @dataset: original time series
 # @group: boxplot of certain group
 # @feature: the feature we want to check
@@ -135,13 +141,12 @@ GetBoxplot = function(dataset, group, feature, filepath){
   
 }
 
-# Density plot by month, weekdays, year
+# Summary: Density plot by month, weekdays, year
 # @dataset: original time series
 # @group: group by certain group
 # @feature: the feature we want to check
 # @filepath: path to save the image
-# Return pictures saved in specified filepath
-
+# Return: pictures saved in specified filepath
 GetDensityplot = function(dataset, group, feature, filepath){
   dataset$Month = factor(dataset$Month, levels = month.abb)
   dataset$Week = factor(dataset$Week, 
@@ -188,13 +193,13 @@ GetDensityplot = function(dataset, group, feature, filepath){
   
 }
 
-# Moving average plot 
+# Summary: Moving average plot 
 # @dataset: original time series
 # @group: group by certain group
 # @feature: the feature we want to check
 # @filepath: path to save the image
 # @ma_order a scale
-# Return pictures saved in specified filepath
+# Return: pictures saved in specified filepath
 GetMAplot = function(dataset, feature, group, ma_order, filepath){
   dataset_ma <- dataset
   dataset_ma[,"ma_order"] <- forecast::ma(dataset[, feature], order = ma_order)
@@ -217,12 +222,13 @@ GetMAplot = function(dataset, feature, group, ma_order, filepath){
   
 }
 
-# Change data to wide
+# Summary: Change data to wide
 # @dataset: dataframe containing time series to be clustered.
+# @features_name: the vector of feature names to be considered.
 # @key: name of column containing the new column names.
 # @obs: name of the row containing the new row names.
 # @features_name: name of column containing values.
-
+# Return: the dataframe of the expanded data
 GetClusterPrep <- function(dataset, features_name, obs, key) {
   dataset_res <- unique(dataset[,obs])
   for (i in features_name) {
@@ -235,36 +241,60 @@ GetClusterPrep <- function(dataset, features_name, obs, key) {
 
 
 # Modeling---------------------------
-## Bechmark model
-# @tuning_set: the dataframe to fit the model.
-# @forcast_time: the number of steps ahead at which to predict.
-# @predict_set: the dataframe contains the time series to help predict (not used in this model, just to make all models consistent)..
-# @y_feature: the name of response time series only.
+
+# Summary: Bechmark model using median of the training set.
+# @tuning_set: dataframe of time series, must include the feature gcu_seconds and memory_gib_seconds.
+# @forcast_time: the length of next prediction interval.
+# @predict_set: certain predictors to be added in the model (not for ARIMA model, just be consistent with VAR model).
+# @y_feature: certain response variables to be considered.
+# Return: Prediction of the correponding features.
 MedianModel <- function(tuning_set,  
-                       forcast_time = 30, predict_set = NULL,
-                       y_feature = NULL){
-  fit_gcu <- median(tuning_set[,"gcu_seconds"])
-  fit_mem <- median(tuning_set[,"memory_gib_seconds"])
-  pred_gcu <- rep(fit_gcu, forcast_time)
-  pred_mem <- rep(fit_mem, forcast_time)
-  return(list("pred_gcu" = pred_gcu, "pred_mem" = pred_mem))
+                        forcast_time = 30, predict_set = NULL,
+                        y_feature = NULL){
+  pred_ls <- list()
+  pred_tmp <- NULL
+  for (i in 1:length(y_feature)) {
+    fit <- median(tuning_set[, y_feature[i]])
+    pred_fit <- rep(fit, forcast_time)
+    pred_tmp <- cbind(pred_tmp, pred_fit)
+  }
+  colnames(pred_tmp) <- y_feature
+  pred_ls[["prediction"]] <- as.data.frame(pred_tmp)
+  
+  return(pred_ls)
 }
 
-## Arima model
+# Sumamry: get the prediction from ARIMA model
+# @tuning_set: dataframe of time series, must include the feature gcu_seconds and memory_gib_seconds
+# @p: the number of lags for AR model
+# @q: the number of lags for MA model
+# @forcast_time: the length of next prediction interval
+# @predict_set: certain predictors to be added in the model (not for ARIMA model, just be consistent with VAR model).
+# @y_feature: certain response variables to be considered
+# Return: Prediction of the correponding features
 ArimaModel <- function(tuning_set, p = 11, q = 0, 
                        forcast_time = 30, predict_set = NULL,
                        y_feature = NULL){
-  fit_gcu <- arima(tuning_set[,"gcu_seconds"], order=c(p, 0, q))
-  fit_mem <- arima(tuning_set[,"memory_gib_seconds"], order=c(p, 0, q))
-  pred_gcu <- predict(fit_gcu, n.ahead = forcast_time)$pred
-  pred_mem <- predict(fit_gcu, n.ahead = forcast_time)$pred
-  return(list("pred_gcu" = pred_gcu, "pred_mem" = pred_mem))
+  pred_ls <- list()
+  pred_tmp <- NULL
+  for (i in 1:length(y_feature)) {
+    fit <- arima(tuning_set[, y_feature[i]], order=c(p, 0, q))
+    pred_fit <- predict(fit, n.ahead = forcast_time)$pred
+    pred_tmp <- cbind(pred_tmp, pred_fit)
+  }
+  colnames(pred_tmp) <- y_feature
+  pred_ls[["prediction"]] <- as.data.frame(pred_tmp)
+  return(pred_ls)
 }
 
 
 ## VAR model
 
-# Split data
+# Sumamry: split dataset into training and test set
+# @dataset: dataframe
+# @interval: the length of the test set
+# @hold_day: the number of hold out day to be split
+# Return: list of training and test set split
 SplitData <- function(dataset, interval = 10, hold_day = 30)  {
   split_ls <- list()
   for (i in 1:floor(hold_day / interval)) {
@@ -277,7 +307,11 @@ SplitData <- function(dataset, interval = 10, hold_day = 30)  {
 }
 
 
-# Expand data
+# Sumamry: expand dataset into the form that each selected previous lag is the predictor 
+# @dataset: dataframe
+# @features: certain features to be expanded
+# @lag_num: the number of lags to be expanded
+# Return: a dataframe of expanded data
 ExpandData <- function(features, dataset, lag_num) {
   X_expand <- list()
   for (i in 1:length(features)) {
@@ -295,8 +329,13 @@ ExpandData <- function(features, dataset, lag_num) {
 #3. predict add the current data. If use this option, the default is use the second option
 
 
-# Add one prediction with same order to previous observations
-# @test_set is used to give features for current or previous value
+# Sumamry: Add one prediction with same order to previous observations
+# @test_set: dataframe of test set
+# @x_feature certain predictors to be considered
+# @y_feature certain response variables to be considered
+# @pred_test: dataframe of prediction set
+# @i: the selected observation of pred_test
+# Return: a dataframe of expanded data with previous prediction
 # NOTE: should be improved
 GetNewObs <- function(x_feature, y_feature, 
                       test_set, pred_test, i) {
@@ -315,19 +354,25 @@ GetNewObs <- function(x_feature, y_feature,
   return(new_obs)
 }
 
-# Predict next interval time
+# Sumamry: Get the next several predictions
 # @interval: predict next interval
 # @X: input predictor matrix (similar dimensions to train_set)
 # @features: names of predictors
+# @lag_num: the number of lags to be selected
+# @is.together controls whether use multivariate gaussian family
+# @current_add: whether we add current features in the data
+# @test_set: if current_add is true, then we need specify the test set, or default is null
+# @x_pred: specify whether predict all features
+# Return: a dataframe of predictions
 PredictVar <- function(interval, fit, X, 
                        features, lag_num = 15, 
                        current_add = F, test_set = NULL, 
                        x_pred = F, is.together = T) {
   pred_test <- matrix(0, nrow = interval, ncol = length(features))
-  X_tmp <- X
+  X_tmp <- as.matrix(X)
   
   newx_mat <- matrix(0, ncol = ncol(X)*lag_num, nrow = interval+1)
-  newx_mat[1,] <- c(X)
+  newx_mat[1,] <- c(as.matrix(X))
   
   
   if (x_pred){
@@ -351,8 +396,10 @@ PredictVar <- function(interval, fit, X,
     x_feature_only <- setdiff(x_feature, features)
     
     if (current_add) {
-      newx_mat <- cbind(newx_mat, matrix(0, nrow = nrow(newx_mat), ncol = length(x_feature_only)))
-      newx_mat[1, (ncol(newx_mat) - length(x_feature_only) + 1):ncol(newx_mat)] <- as.matrix(test_set[1, x_feature_only])
+      newx_mat <- cbind(newx_mat, 
+                        matrix(0, nrow = nrow(newx_mat), ncol = length(x_feature_only)))
+      newx_mat[1, (ncol(newx_mat) - length(x_feature_only) + 1):ncol(newx_mat)] <- 
+        as.matrix(test_set[1, x_feature_only])
       test_set <- rbind(test_set, 0)
     } 
     
@@ -387,7 +434,7 @@ PredictVar <- function(interval, fit, X,
   return(list("pred" = pred_test))#, "error" = error))
 }
 
-
+# Sumamry: Fit the VAR model
 # @train_set: the dataframe to train the model
 # @lag_num: number of lags to be considered
 # @lambda: tuning parameter, either a vector or a scalar 
@@ -399,9 +446,7 @@ PredictVar <- function(interval, fit, X,
 # @current_add: whether we add current features in the data
 # @test_set: if current_add is true, then we need specify the test set, or default is null
 # @x_pred: specify whether predict all features
-
-# Return predictions for next intervals
-
+# Return: Predictions for next intervals
 VarFit <- function(train_set, lag_num = 15, lambda, 
                    y_feature, x_feature, weights = NULL, 
                    is.together = T, interval = 10, x_pred = F,
@@ -427,7 +472,7 @@ VarFit <- function(train_set, lag_num = 15, lambda,
   # Fit model
   if (is.together){
     family = "mgaussian"
-    fit <- glmnet(X, Y, weights = weights, lambda = lambda, family = family)
+    fit <- glmnet(X, Y, weights = weights, lambda = lambda, family = family, standardize = F)
     
     # Predict
     pred_test <- PredictVar(interval = interval, 
@@ -452,9 +497,10 @@ VarFit <- function(train_set, lag_num = 15, lambda,
       } else {
         lambda_sel <- lambda
       }
-      fit <- glmnet(X, Y[,i], weights = weights, lambda = lambda_sel, family = family)
+      fit <- glmnet(X, Y[,i], weights = weights, lambda = lambda_sel, family = family, standardize = F)
       fit_ls[[i]] <- fit
     }
+    
     # Predict
     pred_test <- PredictVar(interval = interval, 
                             fit = fit_ls, 
@@ -465,19 +511,35 @@ VarFit <- function(train_set, lag_num = 15, lambda,
                             test_set = test_set, 
                             x_pred = x_pred, is.together = is.together)
     pred <- pred_test$pred
+    fit <- fit_ls
   }
   
   
-  return(list("pred" = pred))
+  return(list("pred" = pred, "fit" = fit))
 }
 
 
-
+# Sumamry: Forward validation for select tuning parameters
+# @dataset: the dataframe to train the model
+# @tuning_interval: the length of interval of test set in parameter tuning procedure
+# @lambda: tuning parameter, either a vector or a scalar 
+# @hold_day: the number of hold out day to tune the model
+# @lag_num: number of lags to be considered
+# @x_feature: the name of time series in the predictor
+# @y_feature: the name of response time series only
+# @is.together controls whether use multivariate gaussian family
+# @weight_type: whether use equal weighted or weighted MSE to fit the model
+# @forcast_time: the prediction interval for forward corss-validation
+# @predict_set: the test set to tune the parameter
+# @x_pred: specify whether predict all features
+# @current_add: whether we add current features in the data
+# @tuning_parameter: specify the tuning parameter
+# Return: Predictions for next intervals and the tuning parameter
 VarModel <- function(dataset, tuning_interval = 10, lambda = seq(0.0001,0.005, length.out = 20), 
                      hold_day = 30, lag_num = 15, x_feature = x_feature, y_feature = y_feature,
                      is.together = T, weight_type = "equal", forcast_time = forcast_time,
                      predict_set = validation_set_new, x_pred = T, current_add = F, 
-                     tuning_parameter = NULL) {
+                     tuning_parameter = NULL, tune_type = "moving") {
   # Normalize data
   data_mean <- apply(dataset[, x_feature], 2, mean)
   data_sd <- apply(dataset[, x_feature], 2, sd)
@@ -505,13 +567,25 @@ VarModel <- function(dataset, tuning_interval = 10, lambda = seq(0.0001,0.005, l
     
     
     for (i in 1:length(data_split)) {
-      train_set <- data_split[[i]]$train_set
+      if (tune_type == "expand") {
+        train_set_start = 1
+      }
+      if (tune_type == "moving") {
+        train_set_start = 1 + (i - 1)*tuning_interval
+      }
+      train_set <- data_split[[i]]$train_set[train_set_start:nrow(data_split[[i]]$train_set), ]
       test_set <- data_split[[i]]$test_set
       
       if (weight_type == "equal") {
         weights <- rep(1, nrow(train_set)-lag_num)
-      }else{
+      }
+      
+      if (weight_type == "weighted_uniform") {
         weights <- (1 : (nrow(train_set)-lag_num)) / (nrow(train_set)-lag_num)
+      }
+      
+      if (weight_type == "weighted_exponential") {
+        weights <- exp(1 : (nrow(train_set)-lag_num) /  (nrow(train_set)-lag_num)) 
       }
       
       for (j in 1:length(lambda)) {
@@ -560,11 +634,15 @@ VarModel <- function(dataset, tuning_interval = 10, lambda = seq(0.0001,0.005, l
   # Predict
   if (weight_type == "equal") {
     weights <- rep(1, nrow(data_norm)-lag_num)
-  }else{
-    weights <- (1 : (nrow(data_norm)-lag_num)) 
   }
   
+  if (weight_type == "weighted_uniform") {
+    weights <- (1 : (nrow(data_norm)-lag_num)) / (nrow(data_norm)-lag_num)
+  }
   
+  if (weight_type == "weighted_exponential") {
+    weights <- exp((1 : (nrow(data_norm)-lag_num))/ (nrow(data_norm)-lag_num)) 
+  }
   
   pred <- VarFit(train_set = data_norm, 
                  lag_num = lag_num, 
@@ -584,23 +662,34 @@ VarModel <- function(dataset, tuning_interval = 10, lambda = seq(0.0001,0.005, l
   pred_normback <- sapply(1:length(y_feature), function(x) (pred$pred[,y_feature[x]] * data_sd[x]) + data_mean[x])
   colnames(pred_normback) <- y_feature
   print(paste("lambda_min:",lambda_min))
-  return(list("pred_gcu" = pred_normback[,"gcu_seconds" ], "pred_mem" = pred_normback[,"memory_gib_seconds"], "tuning_parameter" = lambda_min))
+  
+  pred_ls <- list()
+  pred_ls[["prediction"]] <- as.data.frame(pred_normback)
+  pred_ls[["tuning_parameter"]] <- lambda_min
+  pred_ls[["fit"]] <- pred$fit
+  pred_ls[["normal_para"]] <- list("mean" = data_mean, "sd" = data_sd)
+  return(pred_ls)
 }
 
 
 # Validate---------------------------
-# Define the transformation method
-# @dataset: dataframe
-# @initial_data: contains the initial values before the transformation
-# @features: name of the features we want to transform
-# @tranform_type: type of transformation
-# @season: the seasonality want to be added back
+
+# Sumamry: Define the transformation method
+# @dataset: dataframe.
+# @initial_data: contains the initial values before the transformation.
+# @features: name of the features we want to transform.
+# @tranform_type: type of transformation.
+# @season: the seasonality want to be added back.
+# @missingdata: dataframe include the index of missing data and its original values.
+# Return: transform back the transformed data
 Backtransform <- function(dataset, 
                           initial_data = initial_data,
                           features = c("gcu_seconds", "memory_gib_seconds"),
                           tranform_type = "log_diff", season = NULL,
                           missingdata = NULL) {
   
+  dataset$date <- as.Date(dataset$date)
+  initial_data$date <- as.Date(initial_data$date)
   if (!is.null(season)) {
     for (j in features) {
       for (i in (season+1):nrow(dataset)) {
@@ -610,14 +699,17 @@ Backtransform <- function(dataset,
   }
   
   if (!is.null(missingdata)) {
+    missingdata$date <- as.Date(missingdata$date)
+    missingdata <- missingdata[missingdata$date %in% dataset$date,]
     for (i in features) {
-      miss_ind <- missingdata$index[missingdata$features == i]
-      miss_ind <- miss_ind[miss_ind < nrow(dataset)]
-      dataset[miss_ind, i] <- missingdata$original_data[missingdata$index %in% miss_ind]
+      miss_ind <- which(dataset$date %in% missingdata$date[missingdata$features == i])
+      dataset[miss_ind, i] <- missingdata$original_data[missingdata$features == i]
     }
   }
   
   if (tranform_type == "log_diff") {
+    time_diff <- dataset[1, "date"] - initial_data$date
+    
     data_org <- as.data.frame(matrix(0, ncol = length(features), nrow = (nrow(dataset)+1)))
     colnames(data_org) <- features
     data_org[1,] <- log(initial_data[,features])
@@ -627,6 +719,7 @@ Backtransform <- function(dataset,
     }
     res <- exp(data_org)
     res <- res[-1,]
+    res$date <- initial_data$date + time_diff*(1:nrow(res))
   }
   
   
@@ -635,18 +728,21 @@ Backtransform <- function(dataset,
 
 
 
-# Create a validation framework to plug in models
+# Sumamry: Create a validation framework to plug in models
+# @validate_type: the type of validation to call
 # @model: model want to call
-# @hold_day: date to split the tuning set
+# @tuning_set: the dataframe of the tuning set
 # @validation_set: data to do model selection
 # @validation_interval: validate windows
-# @is.tuned: whether model need to tune the parameters
-# @metric: metric to be selected
+# @metric: metric selected to evaluate the model performance
 # @is.plot: whether need to show the plot
 # @is.origin: whether show the results transformed back on the origin data
+# @transform.fun: the back transformation function
+# @initial_data: the initial data used to transfer back
+# @is.tuned: whether model need to tune the parameters
+# @season: the seasonality want to be added back.
+# @missingdata: dataframe include the index of missing data and its original values.
 # Return the results for gcu and memeory
-
-
 ValidateModel <- function(validate_type = "expand",
                           model = ArimaModel, 
                           tuning_set = tuning_set, 
@@ -660,6 +756,7 @@ ValidateModel <- function(validate_type = "expand",
                           is.tuning = T,
                           season = 7,
                           missingdata = missingdata,
+                          features = c("gcu_seconds", "memory_gib_seconds"),
                           ...
 ){
   
@@ -667,21 +764,23 @@ ValidateModel <- function(validate_type = "expand",
   validation_times <- floor(nrow(validation_set) / validation_interval-1)
   
   res <- list()
-  error <- list("gcu_err" = NULL, "mem_err" = NULL)
-  features <- c("gcu_seconds", "memory_gib_seconds")
+  error <- lapply(1:length(features), function(x) NULL)
+  error <- setNames(error, features)
   
   # If need to transform back to the original data, transform back.
   if (is.origin) {
     data_origin_all <- transform.fun(rbind(tuning_set, validation_set),
                                      initial_data = initial_data,
                                      features = features,
-                                     tranform_type = "log_diff", 
+                                     tranform_type = "log_diff",
                                      season = season,
                                      missingdata = missingdata)
     # data_origin_all <- Backtransform(rbind(tuning_set, validation_set),
     #                                  initial_data = initial_data,
     #                                  features = features,
-    #                                  tranform_type = "log_diff", season = 7)
+    #                                  tranform_type = "log_diff",
+    #                                  season = 7,
+    #                                  missingdata = missingdata)
     data_origin_all$date = rbind(tuning_set, validation_set)$date
     validation_set_org <- data_origin_all[data_origin_all$date > tuning_set[nrow(tuning_set), "date"], ]
     data_origin_pred_ls <- list()
@@ -703,6 +802,8 @@ ValidateModel <- function(validate_type = "expand",
     tune_set_new <- rbind(tuning_set, validation_set[index_sel, ])
     
     validate_date_start <- tune_set_new$date[nrow(tune_set_new)]
+    print(str(validate_date_start))
+    print(str(validation_set$date))
     validation_set_new <- validation_set[validation_set$date > validate_date_start,][1:validation_interval,]
     
     if (is.null(tuning_parameter)) {
@@ -712,11 +813,11 @@ ValidateModel <- function(validate_type = "expand",
                           y_feature = features,
                           ...)
       # tune_set_new2 <- tune_set_new[(season+tuning_set_start):nrow(tune_set_new), ]
-      # res[[i+1]] <- VarModel(dataset = tune_set_new2, tuning_interval = 10,
-      #                        lambda = seq(0.0001, 0.1, length.out = 20),
-      #                        hold_day = 30, lag_num = p, x_feature = x_feature,
+      # res[[i+1]] <- VarModel(dataset = tune_set_new2, tuning_interval = tuning_interval,
+      #                        lambda = lambda,
+      #                        hold_day = 30, lag_num = lag_num, x_feature = x_feature,
       #                        y_feature = features,
-      #                        is.together = F, weight_type = "equal",
+      #                        is.together = F, weight_type = weight_type,
       #                        forcast_time = validation_interval,
       #                        predict_set = validation_set_new,
       #                        x_pred = T, current_add = F)
@@ -731,69 +832,79 @@ ValidateModel <- function(validate_type = "expand",
                           y_feature = features,
                           tuning_parameter = tuning_parameter,
                           ...)
-      # res[[i+1]] <- VarModel(dataset = tune_set_new, tuning_interval = 10,
-      #                        lambda = seq(0.01, 1, length.out = 20),
-      #                        hold_day = 30, lag_num = p, x_feature = x_feature,
+      # res[[i+1]] <- VarModel(dataset = tune_set_new[(season+tuning_set_start):nrow(tune_set_new), ], tuning_interval = tuning_interval,
+      #                        lambda = lambda,
+      #                        hold_day = 30, lag_num = lag_num, x_feature = x_feature,
       #                        y_feature = features,
-      #                        is.together = F, weight_type = "equal",
+      #                        is.together = F, weight_type = weight_type,
       #                        forcast_time = validation_interval,
       #                        predict_set = validation_set_new,
       #                        x_pred = T, current_add = F, tuning_parameter = tuning_parameter)
     }
     
-    
+    time_diff <- tune_set_new[2, "date"] - tune_set_new[1, "date"]
     if (is.origin) {
-      validation_set_pred <- as.data.frame(rbind(as.matrix(tune_set_new[,features]), cbind(res[[i+1]]$pred_gcu, res[[i+1]]$pred_mem)))
+      validation_set_pred <- as.data.frame(rbind(as.matrix(tune_set_new[,features]), res[[i+1]]$prediction))
       colnames(validation_set_pred) <- features
+      date_lab <- tune_set_new[, "date"]
+      date_lab <- c(date_lab, 
+                    date_lab[length(date_lab)] + time_diff * (1:validation_interval))
+      validation_set_pred$date <- date_lab
       data_origin_pred <- transform.fun(validation_set_pred,
                                         initial_data = initial_data,
                                         features = features,
-                                        tranform_type = "log_diff", 
-                                        season = season, 
+                                        tranform_type = "log_diff",
+                                        season = season,
                                         missingdata = missingdata)
       
       # data_origin_pred <- Backtransform(validation_set_pred,
       #                                  initial_data = initial_data,
       #                                  features = features,
-      #                                  tranform_type = "log_diff", season = season)
-      
+      #                                  tranform_type = "log_diff",
+      #                                  season = season,
+      #                                  missingdata = missingdata)
+
       data_origin_pred <- data_origin_pred[(nrow(data_origin_pred) - validation_interval + 1): nrow(data_origin_pred), ]
       validation_set_new_org <- validation_set_org[validation_set_org$date > validate_date_start,][1:validation_interval,]
-      error$gcu_err[[i+1]] <- data_origin_pred$gcu_seconds - 
-        validation_set_new_org$gcu_seconds
-      error$mem_err[[i+1]] <- data_origin_pred$memory_gib_seconds - 
-        validation_set_new_org$memory_gib_seconds
+      
+      for (j in features) {
+        error[[j]][[i+1]] <- data_origin_pred[, j] - 
+          validation_set_new_org[, j]
+      }
       data_origin_pred_ls[[i+1]] <- data_origin_pred
       
     } else {
-      error$gcu_err[[i+1]] <- res[[i+1]]$pred_gcu - validation_set_new$gcu_seconds
-      error$mem_err[[i+1]] <- res[[i+1]]$pred_mem - validation_set_new$memory_gib_seconds
+      
+      for (j in features) {
+        error[[j]][[i+1]] <- res[[i+1]][, j] - 
+          validation_set_new[, j]
+      }
+      
     }
   }
   
-  
-  eval_res <- list("gcu" = NULL, "mem" = NULL)
-  
   if (metric == "MSE") {
-    eval_res$gcu <- mean(unlist(error$gcu_err)^2)
-    eval_res$mem <- mean(unlist(error$mem_err)^2)
+    eval_res <- lapply(features, function(x) mean(unlist(error[[x]])^2))
   }
+  if (metric == "MAE") {
+    eval_res <- lapply(features, function(x) median(abs(unlist(error[[x]]))))
+  }
+  eval_res <- setNames(eval_res, features)
   
-  
-  
+  pred_transform <- lapply(res, function(x) x$prediction)
+  pred_transform <- as.data.frame(do.call("rbind", pred_transform))
+  pred_data_transform <- pred_transform
   if (is.plot == TRUE) {
-    pred_transform <- lapply(res, function(x) cbind(x$pred_gcu, x$pred_mem))
-    pred_transform <- as.data.frame(do.call("rbind", pred_transform))
     colnames(pred_transform) <- features
     data_transform_all <- rbind(tuning_set, validation_set)
     xlabel <- data_transform_all$date
-  
+    
     if (is.origin) {
       par(mfrow=c(2,2))
-      plot_data <- do.call("rbind", data_origin_pred_ls)
+      pred_data_org <- do.call("rbind", data_origin_pred_ls)
       tune_set_org <- data_origin_all[data_origin_all$date <= tuning_set[nrow(tuning_set), "date"], ]
-      plot_data <- rbind(tune_set_org[, features], plot_data)
-      
+      plot_data <- rbind(tune_set_org[, c(features, "date")], pred_data_org)
+      pred_transform <- rbind(tuning_set[, features], pred_transform[, features])
       for (j in features) {
         # plot origin
         # red line is the model prediction
@@ -803,7 +914,7 @@ ValidateModel <- function(validate_type = "expand",
         # axis(side=1, at=xtick, labels = FALSE)
         
         # plot transformed data
-        plot(xlabel[1:nrow(plot_data)], c(tuning_set[,j], pred_transform[, j]), type = "l", col = 2, ylab = j, xlab = "Time", main = "Transformed") 
+        plot(xlabel[1:nrow(pred_transform)], pred_transform[, j], type = "l", col = 2, ylab = j, xlab = "Time", main = "Transformed") 
         lines(xlabel,data_transform_all[, j], col = 1)
         # abline(v = nrow(plot_data) - (1:(validation_times+1)*validation_interval), col = 3, lty = 2)
         abline(v = xlabel[nrow(tuning_set)], col = 3, lty = 2)
@@ -814,55 +925,70 @@ ValidateModel <- function(validate_type = "expand",
       par(mfrow=c(2,1))
       # plot transformed data
       for (j in features) {
-        plot(c(tuning_set[,j], pred_transform[, j]), type = "l", col = 2, ylab = j, xlab = "Time", main = "Transformed") 
-        lines(data_transform_all[, j], col = 1)
-        abline(v = nrow(plot_data) - (1:(validation_times+1)*validation_interval), col = 3, lty = 2)
+        # plot transformed data
+        plot(xlabel[1:nrow(pred_transform)], pred_transform[, j], type = "l", col = 2, ylab = j, xlab = "Time", main = "Transformed") 
+        lines(xlabel,data_transform_all[, j], col = 1)
+        abline(v = xlabel[nrow(tuning_set)], col = 3, lty = 2)
       }
     }
-    title(paste(as.character(substitute(model)), "with", validation_interval, "days validation"), line = -1, outer = TRUE)
+    title(paste(as.character(substitute(model)), "for", validation_interval, "days prediction"), line = -1, outer = TRUE)
   }
-  return(list("MSE" = eval_res, "prediction" = plot_data))
+  return(
+    list("MSE" = eval_res, 
+         "prediction_org" = pred_data_org, 
+         "prediction_trans" = pred_data_transform, 
+         "model" = res)
+  )
   
 }
 
 
-# Baysian Model
+# Sumamry: get the prediction from Bayesian Strutral time series model
+# @tuning_set: dataframe of time series, must include the feature gcu_seconds and memory_gib_seconds
+# @forcast_time: the length of next prediction interval
+# @predict_set: certain predictors to be added in the model (not for ARIMA model, just be consistent with VAR model).
+# @y_feature: certain response variables to be considered
+# Return: Prediction of the correponding features
 BaysianModel <- function(tuning_set,  
                          forcast_time = 30, 
                          y_feature = y_feature,
                          predict_set = NULL) {
   pred_ls <- list()
+  pred_tmp <- NULL
   for (i in 1:length(y_feature)) {
     ### Run the bsts model
     y <- tuning_set[,y_feature[i]]
     fit <- bsts::AddLocalLinearTrend(list(), y)
-    fit <- bsts::AddSeasonal(fit, y, nseasons = 52)
+    fit <- bsts::AddSeasonal(fit, y, nseasons = 30)
     
     bsts.model <- bsts::bsts(y,
                              state.specification = fit,
                              niter = 500) 
     
-    # validation --------------------------------------------------------------------
     burn <- SuggestBurn(0.1, bsts.model)
     pred <- predict(bsts.model,
                     h = forcast_time,
                     burn = burn)
-    
-    pred_ls[[i]] <- pred$mean
+    pred_tmp <- cbind(pred_tmp, pred$mean)
   }
-  
-  return(list("pred_gcu" = pred_ls[[1]], "pred_mem" = pred_ls[[2]]))
+  colnames(pred_tmp) <- y_feature
+  pred_ls[["prediction"]] <- as.data.frame(pred_tmp)
+   
+  return(pred_ls)
 }
 
 
 # Result Table---------------------------
+# Summary tables for model comparison
+# @model: model want to call
+# @tuning_set: the dataframe of the tuning set
+# @is.tuned: whether model need to tune the parameters
+# Return: MSE for all features, and plots for the fitted value
 GetModelValTable <- function(model, is.tuning, ...) {
   validation_interval <- c(3, 7, 14)
   mse_var <- matrix(0, nrow = 2, ncol = length(validation_interval))
   cutoff <- 7
   season <- 7
-  # tuning_set2 <- rbind(data_agg_sum_trans_log[(cutoff - season + 1):cutoff,], 
-  #                      tuning_set[cutoff:nrow(tuning_set),])
   tuning_set2 <- tuning_set
   initial_data <- data_agg_sum[as.Date(data_agg_sum$date) == (as.Date(tuning_set2[1,]$date)-1), ]
   print(initial_data)
@@ -880,6 +1006,7 @@ GetModelValTable <- function(model, is.tuning, ...) {
                                       initial_data = initial_data,
                                       is.tuning = is.tuning,
                                       missingdata = missingdata,
+                                      features = c("gcu_seconds", "memory_gib_seconds"),
                                       ...
                                       
     )
@@ -889,14 +1016,22 @@ GetModelValTable <- function(model, is.tuning, ...) {
   return(mse_var)
 }
 
-# Summary tables
+# Summary tables for different VAR settings
 # VAR model accross different prediction time with different tuning interval
-GetTunValTable <- function(tuning_set, is.together, lag_num = 28, weight_type = "equal") {
+# @tuning_set: the dataframe of the tuning set
+# @lag_num: number of lags to be considered
+# @is.together controls whether use multivariate gaussian family
+# @weight_type: whether use equal weighted or weighted MSE to fit the model
+# Return: MSE for all features, and plots for the fitted value
+GetTunValTable <- function(tuning_set, is.together, lag_num = 28, weight_type = "equal", lambda = lambda) {
   validation_interval <- c(3, 7, 14)
   hold_day <- 14
   mse_var <- matrix(0, nrow = length(hold_day)*2, ncol = length(validation_interval))
   
   initial_data <- data_agg_sum[as.Date(data_agg_sum$date) == (as.Date(tuning_set[1,]$date)-1), ]
+  
+  ### missing data need to be changed
+  
   x_feature <- c("gcu_seconds", "memory_gib_seconds")
   for (i in 1:length(validation_interval)) {
     for (j in 1:length(hold_day)) {
@@ -913,7 +1048,7 @@ GetTunValTable <- function(tuning_set, is.together, lag_num = 28, weight_type = 
                                         transform.fun = Backtransform, 
                                         initial_data = initial_data,
                                         tuning_interval = 7, 
-                                        lambda = 10^seq(-4,0.2,0.01), 
+                                        lambda = lambda, 
                                         hold_day = hold_day_j, 
                                         lag_num = lag_num, 
                                         x_feature = x_feature, 
@@ -923,7 +1058,8 @@ GetTunValTable <- function(tuning_set, is.together, lag_num = 28, weight_type = 
                                         current_add = F,
                                         is.tuning = T,
                                         season = 7,
-                                        missingdata = missingdata
+                                        missingdata = missingdata,
+                                        features = c("gcu_seconds", "memory_gib_seconds")
       )
       mse_var[2*j-1,i] <- var_res_together$MSE$gcu
       mse_var[2*j,i] <- var_res_together$MSE$mem
@@ -933,12 +1069,14 @@ GetTunValTable <- function(tuning_set, is.together, lag_num = 28, weight_type = 
   
 }
 
-# Zoom in the plots
+# Summary: Zoom in the plots for fitted values vesus original values
 # @dataset: dataframe containing the prediction for original data
 # @actual_set: contains the original values before the transformation
 # @interval: interval of the zoom in part
 # @breakline: add the vertical line indicating the start date of the prediction
-GetZoomIn <- function(dataset, actual_set, interval, breakline) {
+# @features_name: name of the features to be ploted
+# Return: pictures of zoomed in plots
+GetZoomIn <- function(dataset, actual_set, interval, breakline, features_name) {
   par(mfrow=c(2,1))
   for (i in features_name) {
     plot(dataset$date[interval], dataset[interval, i], type = "l", 
@@ -947,5 +1085,181 @@ GetZoomIn <- function(dataset, actual_set, interval, breakline) {
           actual_set[interval, i], col = 1)
     abline(v = breakline, col = 3, lty = 2)
   }
+  
+}
+
+# Summary: Find the estimators for the given model.
+# @model_fit: contains information about fitted object and normalization parameters, etc. It depends on the previous fitted model.
+# @dataset: dataframe for prediction.
+# @type: type of model used.
+# @lag_num: number of lags.
+# @interval: the length of prediction time.
+# @features: name of the output features.
+# Return: the list of estimators.
+GetEstimator <- function(model_fit, dataset, type = "var", lag_num = NULL, interval = 14, features,
+                         ...) {
+  if (type == "var") {
+    estimator_ls <- list()
+    for (i in features) {
+      dataset[,i] <- (dataset[,i] - model_fit$normal_para$mean[i])
+      dataset[,i] <- dataset[,i] / model_fit$normal_para$sd[i]
+    }
+    
+    for (i in 1:(nrow(dataset) - interval - lag_num + 1)) {
+      newdata <- dataset[i:(lag_num + i - 1), ]
+      estimator <- PredictVar(interval = interval, model_fit$fit, newdata[, features], 
+                              features = features, lag_num = lag_num, 
+                              ...)  
+      
+      estimator_ls[[i]] <- estimator$pred  * 
+        matrix(rep(model_fit$normal_para$sd, interval), ncol = length(features), byrow = T) + 
+        matrix(rep(model_fit$normal_para$mean, interval), ncol = length(features), byrow = T)
+      
+    }
+    
+  }
+  return(estimator_ls)
+}
+
+# Summary: Find the confidence interval for the given model.
+# @estimator_ls: the list of estimators.
+# @data_trans: dataframe for transformed data.
+# @initial_data_mat: the original dataset.
+# @transform.fun: transformation function.
+# @features: name of the output features
+# @tranform_type: type of transformation.
+# @season: the seasonality want to be added back.
+# @missingdata: dataframe include the index of missing data and its original values.
+# Return: the list of daily errors, sum of interval errors, and the original estimators.
+GetError <- function(data_trans,
+                     estimator_ls, 
+                     initial_data_mat, 
+                     transform.fun = Backtransform, 
+                     features, 
+                     tranform_type = "log_diff", 
+                     season, 
+                     missingdata) {
+  error_ls_day <- list()
+  error_ls_sum <- list()
+  estimator_org_ls <- list()
+  data_trans$date <- as.Date(data_trans$date)
+  initial_data_mat$date <- as.Date(initial_data_mat$date)
+  
+  for (i in 1:length(estimator_ls)) {
+    estimator_tmp <- as.data.frame(estimator_ls[[i]])
+    
+    estimator_tmp$date <- as.Date(initial_data_mat$date[i] + (season + lag_num + 1 : interval))
+    end_idx_i <- which(as.Date(data_trans$date) == (as.Date(estimator_tmp$date[1]) - 1))
+    dataset_i <- rbind(data_trans[(end_idx_i - season + 1):end_idx_i, c(features, "date")], estimator_tmp)
+    initial_data_i <- initial_data_mat[as.Date(initial_data_mat$date) == (as.Date(dataset_i[1,]$date) - 1), ]
+    
+    data_origin_i <- Backtransform(dataset_i,
+                                   initial_data = initial_data_i,
+                                   features = features,
+                                   tranform_type = tranform_type, 
+                                   season = season,
+                                   missingdata = missingdata)
+    # Check the difference between original data and predicted data
+    plot(data_origin_i$date, data_origin_i$gcu_seconds, type = "l", main = i)
+    lines(initial_data_mat$date, initial_data_mat$gcu_seconds, col=2)
+    
+    estimator_org_i <- data_origin_i[(nrow(data_origin_i) - interval + 1):nrow(data_origin_i),]
+    estimator_org_ls[[i]] <- estimator_org_i
+    
+    org_idx <- as.Date(initial_data_mat$date) %in% as.Date(estimator_org_i$date)
+    error_ls_day[[i]] <- initial_data_mat[org_idx, features] - 
+      estimator_org_i[,features] 
+    
+    error_ls_sum[[i]] <- apply(initial_data_mat[org_idx, features], 2, sum) - 
+      apply(estimator_org_i[,features], 2, sum) 
+    
+    
+  }
+  
+  return(list("error_each" = error_ls_day, "error_sum" = error_ls_sum, "estimator_org" = estimator_org_ls))
+  
+}
+
+# Summary: Find the confidence interval for the given model.
+# @model_fit: contains information about fitted object and normalization parameters, etc. It depends on the previous fitted model.
+# @dataset: dataframe for prediction.
+# @data_trans: dataframe for transformed data.
+# @data_org: dataframe for original data.
+# @type: type of model used.
+# @lag_num: number of lags.
+# @interval: the length of prediction time.
+# @features: name of the output features.
+# @transform.fun: transformation function.
+# @CI: the quantile of confidence interval.
+# @prediction_org: the prediction of original data.
+# Return: the prediction interval for daily usage and summation of the interval usage.
+GetConf <- function(model_fit, 
+                    dataset, 
+                    data_trans,
+                    data_org,
+                    type = "var", 
+                    lag_num = NULL, 
+                    interval = 14, 
+                    features, 
+                    transform.fun = Backtransform,
+                    CI = c(0.25, 0.95),
+                    prediction_org,
+                    season, 
+                    missingdata,
+                    ...) {
+  initial_start_idx <- which(as.Date(data_org$date) == (as.Date(dataset[1,]$date)-1)) 
+  initial_data_mat <- data_org[(initial_start_idx - season):(nrow(dataset) + initial_start_idx), ]
+  
+  
+  estimator_ls <- GetEstimator(model_fit, 
+                               dataset = dataset, 
+                               type = type, 
+                               lag_num = lag_num, 
+                               interval = interval, 
+                               features = features,
+                               ...)
+  
+  error_ls <- GetError(data_trans,
+                       estimator_ls, 
+                       initial_data_mat, 
+                       transform.fun = transform.fun, 
+                       features, 
+                       tranform_type = "log_diff", 
+                       season, 
+                       missingdata)
+  
+  
+  error_quantile <- list()
+  pred_interval_org <- list()
+  error_sum_quantile <- list()
+  pred_interval_sum_org <- list()
+  for (i in 1:length(features)) {
+    # CI for daily
+    pred_i <- lapply(error_ls$error_each, function(x) x[,features[i]] )
+    pred_i <- do.call("rbind", pred_i)
+    error_quantile[[features[i]]] <- matrix(unlist(lapply(1:ncol(pred_i), function(x) quantile(pred_i[,x], probs = CI))), 
+                                            nrow = interval, 
+                                            byrow = T)
+    pred_interval_org[[i]] <- matrix(0, nrow = interval, ncol = 2)
+    lowerbound <- error_quantile[[features[i]]][, 1] + prediction_org[, features[i]]
+    lowerbound[lowerbound < 0] <- 0
+    pred_interval_org[[i]][, 1] <- lowerbound
+    pred_interval_org[[i]][, 2] <- error_quantile[[features[i]]][, 2] + prediction_org[, features[i]]
+    
+    # CI for sum
+    pred_sum_i <- lapply(error_ls$error_sum, function(x) x[features[i]] )
+    pred_sum_i <- do.call("rbind", pred_sum_i)
+    error_sum_quantile[[features[i]]] <- matrix(unlist(lapply(1:ncol(pred_sum_i), 
+                                                              function(x) quantile(pred_sum_i[,x], probs = CI))), 
+                                                nrow = 1, 
+                                                byrow = T)
+    pred_interval_sum_org[[i]] <- matrix(0, nrow = 1, ncol = 2)
+    lowerbound <- error_sum_quantile[[features[i]]][, 1] + sum(prediction_org[, features[i]])
+    lowerbound[lowerbound < 0] <- 0
+    pred_interval_sum_org[[i]][, 1] <- lowerbound
+    pred_interval_sum_org[[i]][, 2] <- error_sum_quantile[[features[i]]][, 2] + sum(prediction_org[, features[i]])
+    
+  }
+  return(list("CI_day" = pred_interval_org, "CI_sum" = pred_interval_sum_org))
   
 }

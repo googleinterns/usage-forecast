@@ -1,29 +1,30 @@
 rm(list = ls())
+setwd("/Volumes/GoogleDrive/My Drive/alsta_analysis_LA")
 source("functions.R")
 
 
 # Read data---------------------------
-data_agg <- read.csv("data/data_all_LA.csv")
+data_agg <- read.csv("data/Veritas_all_LA.csv")
 summary(data_agg)
 
 # Correct data---------------------------
 # Check infinity, na
-inf_ind <- which(data_agg$feature2_gib_seconds == "Inf")
+inf_ind <- which(data_agg$memory_gib_seconds == "Inf")
 data_agg[inf_ind,]
-data_agg[inf_ind,"feature2_gib_seconds"] <- 
-  mean(data_agg[inf_ind-1,"feature2_gib_seconds"] + 
-         data_agg[inf_ind+1,"feature2_gib_seconds"])
+data_agg[inf_ind,"memory_gib_seconds"] <- 
+  mean(data_agg[inf_ind-1,"memory_gib_seconds"] + 
+         data_agg[inf_ind+1,"memory_gib_seconds"])
 unique(data_agg$cell)
-na_ind <- which(is.na(data_agg$feature2_gib_seconds))
-data_agg[na_ind,"feature2_gib_seconds"] <- 
-  mean(data_agg[na_ind-1,"feature2_gib_seconds"] + 
-         data_agg[na_ind+1,"feature2_gib_seconds"])
+na_ind <- which(is.na(data_agg$memory_gib_seconds))
+data_agg[na_ind,"memory_gib_seconds"] <- 
+  mean(data_agg[na_ind-1,"memory_gib_seconds"] + 
+         data_agg[na_ind+1,"memory_gib_seconds"])
 na_ind_gpu <- which(is.na(data_agg$gpu))
 
-na_ind <- which(is.na(data_agg$feature1_seconds))
-data_agg[na_ind,"feature1_seconds"] <- 
-  mean(data_agg[na_ind-1,"feature1_seconds"] + 
-         data_agg[na_ind+1,"feature1_seconds"])
+na_ind <- which(is.na(data_agg$gcu_seconds))
+data_agg[na_ind,"gcu_seconds"] <- 
+  mean(data_agg[na_ind-1,"gcu_seconds"] + 
+         data_agg[na_ind+1,"gcu_seconds"])
 na_ind_gpu <- which(is.na(data_agg$gpu))
 
 # Check whether na happens before 03-28-2018
@@ -70,23 +71,23 @@ GetLineplot(data_agg_clean, "cell", "./plots/clean_")
 GetLineplot(data_agg_clean[data_agg_clean$cell == "os",], "cell", "./plots/os_")
 
 # Density plots for time series after 2018-03-28
-GetDensityplot(data_agg_clean, "cell", "feature1_seconds", "./plots/")
+GetDensityplot(data_agg_clean, "cell", "gcu_seconds", "./plots/")
 # The plots are skewed to the right, so we need to check the cells that skewed a lot
-summary(data_agg_clean[data_agg_clean$feature1_seconds > 400,"cell"])
+summary(data_agg_clean[data_agg_clean$gcu_seconds > 400,"cell"])
 
 
 ind_tmp <- data_agg_clean$cell %in% c("qf", "ij")
 data_agg_clean_tmp <- data_agg_clean[!ind_tmp, ]
-GetDensityplot(data_agg_clean_tmp, "cell", "feature1_seconds", "./plots/rm400_")
+GetDensityplot(data_agg_clean_tmp, "cell", "gcu_seconds", "./plots/rm400_")
 # Still skewed, take log log
-data_agg_clean_tmp$feature1_seconds <- (data_agg_clean_tmp$feature1_seconds)^(1/20)
-GetDensityplot(data_agg_clean_tmp, "cell", "feature1_seconds", "./plots/rm400_sq20_")
+data_agg_clean_tmp$gcu_seconds <- (data_agg_clean_tmp$gcu_seconds)^(1/20)
+GetDensityplot(data_agg_clean_tmp, "cell", "gcu_seconds", "./plots/rm400_sq20_")
 
 
 
 
 # Get Density plots and MA plots for all years
-features_name = c("gpu", "feature1_seconds", "feature2_gib_seconds")
+features_name = c("gpu", "gcu_seconds", "memory_gib_seconds")
 for (i in features_name) {
   # Density plots with scales
   data_agg_clean_tmp <- data_agg_clean
@@ -101,8 +102,8 @@ for (i in features_name) {
 
 
 # Total usage for all cells
-data_agg_sum <- ddply(data_agg_total, .(date), summarize,feature1_seconds = sum(feature1_seconds), 
-                              feature2_gib_seconds = sum(feature2_gib_seconds),
+data_agg_sum <- ddply(data_agg_total, .(date), summarize,gcu_seconds = sum(gcu_seconds), 
+                              memory_gib_seconds = sum(memory_gib_seconds),
                               gpu = sum(gpu)
 )
 data_agg_sum$cell <- "total"
@@ -201,12 +202,12 @@ saveRDS(data_agg_total_trans_log, "data_agg_total_trans_log.rds")
 
 # Check correlation between time series.
 # Before transformation.
-plot(data_agg_clean_total$feature1_seconds, data_agg_clean_total$feature2_gib_seconds)
-cor(data_agg_clean_total$feature1_seconds, data_agg_clean_total$feature2_gib_seconds) # 0.9893079
+plot(data_agg_clean_total$gcu_seconds, data_agg_clean_total$memory_gib_seconds)
+cor(data_agg_clean_total$gcu_seconds, data_agg_clean_total$memory_gib_seconds) # 0.9893079
 
 # After transformation.
-plot(data_agg_total_trans_log$feature1_seconds[-1], data_agg_total_trans_log$feature2_gib_seconds[-1])
-cor(data_agg_total_trans_log$feature1_seconds[-1], data_agg_total_trans_log$feature2_gib_seconds[-1]) # 0.1829345
+plot(data_agg_total_trans_log$gcu_seconds[-1], data_agg_total_trans_log$memory_gib_seconds[-1])
+cor(data_agg_total_trans_log$gcu_seconds[-1], data_agg_total_trans_log$memory_gib_seconds[-1]) # 0.1829345
 
 # # Check stationarity with time before 2017-07-30
 data_agg_1day_trans_log_before <- data_agg_total_trans_log[data_agg_total_trans_log$date < breaktime,]
@@ -257,8 +258,8 @@ GetLineplot(dataset = data_agg_clean_trans[data_agg_clean_trans$date < breaktime
 GetLineplot(dataset = data_agg_clean_trans_2016_rm[data_agg_clean_trans_2016_rm$date < breaktime,], "cell", filepath = "plots/transform/allrm_log_") 
 
 ## Check stationarity
-features_name <- c("feature1_seconds", 
-                   "feature2_gib_seconds")
+features_name <- c("gcu_seconds", 
+                   "memory_gib_seconds")
 unique_cell <- unique(data_agg_clean_trans$cell)
 res_stationary <- matrix(0, nrow = length(features_name), ncol = length(unique_cell))
 for (i in 1:length(features_name)) {
