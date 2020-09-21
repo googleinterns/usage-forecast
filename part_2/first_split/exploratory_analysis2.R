@@ -1,11 +1,19 @@
 rm(list = ls())
+<<<<<<< HEAD
 setwd("/Volumes/GoogleDrive/My Drive/alsta_analysis_LA")
 source("functions_v3.R")
+=======
+source("functions.R")
+>>>>>>> 882f2a7cc176ef73410b92c1ee4f305687eea75a
 
 ############################################
 ##### Section 1: Read and Correct data #####
 ############################################
+<<<<<<< HEAD
 data_agg <- read.csv("data/Veritas_all_LA_v2.csv")
+=======
+data_agg <- read.csv("data/Veritas_all_LA.csv")
+>>>>>>> 882f2a7cc176ef73410b92c1ee4f305687eea75a
 summary(data_agg)
 
 ### Correct data ###
@@ -27,10 +35,17 @@ data_agg <- data_agg[-na_ind, ]
 na_ind_gpu <- which(is.na(data_agg$gpu))
 
 # Check whether na happens before 03-28-2018
+<<<<<<< HEAD
 change_date <- as.Date("2018-03-28", tz = "America/Los_Angeles")
 data_agg[as.Date(data_agg[na_ind_gpu,"date"], tz = "America/Los_Angeles") <= 
            change_date,]
 data_agg_total <- data_agg
+=======
+change_date <- as.POSIXct("2018-03-28")
+data_agg[as.POSIXct(data_agg[na_ind_gpu,"date"], tz = "America/Los_Angeles") <= 
+           change_date,]
+data_agg_total <- data_agg[!IsDash(data_agg$cell),]
+>>>>>>> 882f2a7cc176ef73410b92c1ee4f305687eea75a
 
 # Correct data type
 data_agg_total$cell <- factor(data_agg_total$cell, unique(data_agg_total$cell))
@@ -56,12 +71,19 @@ saveRDS(data_agg_total, "data_agg_total.rds")
 data_agg_total <- readRDS("data_agg_total.rds")
 
 # Remove the error data.
+<<<<<<< HEAD
 error_start_date <- as.Date("2017-08-01", tz = "America/Los_Angeles")
 error_end_date <- as.Date("2017-09-02", tz = "America/Los_Angeles")
 data_agg_clean <- data_agg_total[data_agg_total$date > error_end_date | 
                                    data_agg_total$date < error_start_date, ]
 # Get the data one month after the change date.
 # data_agg_clean <- data_agg_clean[data_agg_clean$date <= as.Date("2018-04-28", tz = "America/Los_Angeles"), ]
+=======
+data_agg_clean <- data_agg_total[data_agg_total$date > as.POSIXct("2017-09-02", tz = "America/Los_Angeles") | 
+                                   data_agg_total$date < as.POSIXct("2017-08-01", tz = "America/Los_Angeles"), ]
+# Get the data one month after the change date.
+data_agg_clean <- data_agg_clean[data_agg_clean$date <= as.POSIXct("2018-04-28", tz = "America/Los_Angeles"), ]
+>>>>>>> 882f2a7cc176ef73410b92c1ee4f305687eea75a
 saveRDS(data_agg_clean, "data_agg_clean.rds")
 data_agg_clean <- readRDS("data_agg_clean.rds")
 
@@ -76,7 +98,11 @@ GetLineplot(data_agg_clean, "cell", "./plots/clean_")
 GetLineplot(data_agg_clean[data_agg_clean$cell == "os",], "cell", "./plots/os_")
 
 ### Density plots for time series after the change date ###
+<<<<<<< HEAD
 GetDensityplot(data_agg_clean, "cell", "gcu_seconds", "./plots/", "GCU-Seconds")
+=======
+GetDensityplot(data_agg_clean, "cell", "gcu_seconds", "./plots/")
+>>>>>>> 882f2a7cc176ef73410b92c1ee4f305687eea75a
 # The plots are skewed to the right, so we need to check the cells that skewed a lot.
 summary(data_agg_clean[data_agg_clean$gcu_seconds > 400,"cell"])
 # Remove the cells that has extreme values.
@@ -85,7 +111,11 @@ data_agg_clean_tmp <- data_agg_clean[!ind_tmp, ]
 GetDensityplot(data_agg_clean_tmp, "cell", "gcu_seconds", "./plots/rm400_", "GCU-Seconds")
 # Still skewed, take log log
 data_agg_clean_tmp$gcu_seconds <- (data_agg_clean_tmp$gcu_seconds)^(1/20)
+<<<<<<< HEAD
 GetDensityplot(data_agg_clean_tmp, "cell", "gcu_seconds", "./plots/rm400_sq20_", "GCU-Seconds")
+=======
+GetDensityplot(data_agg_clean_tmp, "cell", "gcu_seconds", "./plots/rm400_sq20_")
+>>>>>>> 882f2a7cc176ef73410b92c1ee4f305687eea75a
 
 # Get Density plots and MA plots for all years
 features_name <- c("Gpu-Seconds", "GCU-Seconds", "RAM (GiB)-Seconds")
@@ -116,25 +146,39 @@ for (i in 1:length(features_name)) {
 
 ### Plots for total usage ###
 # Get total usage for all cells
+<<<<<<< HEAD
 data_agg_sum <- ddply(data_agg_total, .(date), summarize, gcu_seconds = sum(gcu_seconds), 
+=======
+data_agg_sum <- ddply(data_agg_total, .(date), summarize,gcu_seconds = sum(gcu_seconds), 
+>>>>>>> 882f2a7cc176ef73410b92c1ee4f305687eea75a
                               memory_gib_seconds = sum(memory_gib_seconds),
                               gpu = sum(gpu)
 )
 data_agg_sum$cell <- "total"
 data_agg_sum <- GetTimeInfo(data_agg_sum)
 saveRDS(data_agg_sum, "data_agg_sum.rds")
+<<<<<<< HEAD
 
 data_agg_clean_total <- data_agg_sum[data_agg_sum$date > error_end_date | 
                                        data_agg_sum$date < error_start_date, ]
 # change_date_1monthaft <- as.Date("2018-04-28", tz = "America/Los_Angeles")
 # data_agg_clean_total <- data_agg_clean_total[data_agg_clean_total$date <= change_date_1monthaft,]
+=======
+data_agg_clean_total <- data_agg_sum[data_agg_sum$date > as.POSIXct("2017-09-02", tz = "America/Los_Angeles") | 
+                                       data_agg_sum$date < as.POSIXct("2017-08-01", tz = "America/Los_Angeles"), ]
+data_agg_clean_total <- data_agg_clean_total[data_agg_clean_total$date <= as.POSIXct("2018-04-28", tz = "America/Los_Angeles"),]
+>>>>>>> 882f2a7cc176ef73410b92c1ee4f305687eea75a
 
 ### Line plots for total usage ###
 GetLineplot(dataset = data_agg_clean_total, "cell", filepath = "plots/total_") 
 GetLineplot(dataset = data_agg_sum, "cell", filepath = "plots/org_total_") 
 
 ### Get Density plots and MA plots for total usage ###
+<<<<<<< HEAD
 for (i in 1:length(features_name)) {
+=======
+for (i in features_name) {
+>>>>>>> 882f2a7cc176ef73410b92c1ee4f305687eea75a
   # Density plots with scales
   data_agg_clean_tmp <- data_agg_clean_total
   data_agg_clean_tmp[,features[i]] <- (data_agg_clean_total[,features[i]])^(1/20)
@@ -164,7 +208,11 @@ data_agg_clean_cl <- GetClusterPrep(dataset = data_agg_clean, features_name = fe
 
 # Remove 2016 data, since 2016 is potentially differ from other years
 data_agg_clean_2016_rm <- data_agg_clean[data_agg_clean$Year != "16",]
+<<<<<<< HEAD
 for (i in 1:length(features_name)) {
+=======
+for (i in features_name) {
+>>>>>>> 882f2a7cc176ef73410b92c1ee4f305687eea75a
   # Density plots with scales
   data_agg_clean_tmp <- data_agg_clean_2016_rm
   data_agg_clean_tmp[,i] <- (data_agg_clean_2016_rm[,i])^(1/20)
@@ -180,19 +228,31 @@ for (i in 1:length(features_name)) {
 ######################################
 
 ### Tranformation 1: take differences ###
+<<<<<<< HEAD
 data_agg_total_trans <- as.data.frame(sapply(features, function(x) {
+=======
+data_agg_total_trans <- as.data.frame(sapply(features_name, function(x) {
+>>>>>>> 882f2a7cc176ef73410b92c1ee4f305687eea75a
   data_agg_clean_total[2:dim(data_agg_clean_total)[1], x] - data_agg_clean_total[1:(dim(data_agg_clean_total)[1]-1), x]}))
 data_agg_total_trans$date <- data_agg_clean_total$date[2:dim(data_agg_clean_total)[1]]
 data_agg_total_trans$cell <- "total"
 data_agg_trans_2016_rm <- data_agg_total_trans[format(data_agg_total_trans$date,"%Y") != "2016", ]
 
 ### Check the difference of time series ###
+<<<<<<< HEAD
 breaktime <- as.Date("2017-08-01", tz = "America/Los_Angeles")
+=======
+breaktime <- as.POSIXct("2017-08-01", tz = "America/Los_Angeles")
+>>>>>>> 882f2a7cc176ef73410b92c1ee4f305687eea75a
 GetLineplot(dataset = data_agg_total_trans[data_agg_total_trans$date < breaktime,], "cell", filepath = "plots/transform/diff_") 
 GetLineplot(dataset = data_agg_trans_2016_rm[data_agg_trans_2016_rm$date < breaktime,], "cell", filepath = "plots/transform/rm_diff_") 
 
 ### Tranformation 2: take log ###
+<<<<<<< HEAD
 data_agg_total_trans_log <- as.data.frame(sapply(features, function(x) {
+=======
+data_agg_total_trans_log <- as.data.frame(sapply(features_name, function(x) {
+>>>>>>> 882f2a7cc176ef73410b92c1ee4f305687eea75a
   log(data_agg_clean_total[2:dim(data_agg_clean_total)[1], x]) - log(data_agg_clean_total[1:(dim(data_agg_clean_total)[1]-1), x])}))
 data_agg_total_trans_log$date <- data_agg_clean_total$date[2:dim(data_agg_clean_total)[1]]
 data_agg_total_trans_log$cell <- "total"
@@ -203,7 +263,11 @@ GetLineplot(dataset = data_agg_total_trans_log[data_agg_total_trans_log$date < b
 GetLineplot(dataset = data_agg_trans_log_2016_rm[data_agg_trans_log_2016_rm$date < breaktime,], "cell", filepath = "plots/transform/rm_log_") 
 
 ### Tranformation 3: take increase rate ###
+<<<<<<< HEAD
 data_agg_total_trans_rate <- as.data.frame(sapply(features, function(x) {
+=======
+data_agg_total_trans_rate <- as.data.frame(sapply(features_name, function(x) {
+>>>>>>> 882f2a7cc176ef73410b92c1ee4f305687eea75a
   (data_agg_clean_total[2:dim(data_agg_clean_total)[1], x] - data_agg_clean_total[1:(dim(data_agg_clean_total)[1]-1), x]) / 
     data_agg_clean_total[1:(dim(data_agg_clean_total)[1]-1), x]}))
 data_agg_total_trans_rate$date <- data_agg_clean_total$date[2:dim(data_agg_clean_total)[1]]
@@ -215,7 +279,11 @@ GetLineplot(dataset = data_agg_total_trans_rate[data_agg_total_trans_rate$date <
 GetLineplot(dataset = data_agg_trans_rate_2016_rm[data_agg_trans_rate_2016_rm$date < breaktime,], "cell", filepath = "plots/transform/rm_rate_") 
 
 ### Tranformation 4: take log increase rate ###
+<<<<<<< HEAD
 data_agg_total_trans_lograte <- as.data.frame(sapply(features, function(x) {
+=======
+data_agg_total_trans_lograte <- as.data.frame(sapply(features_name, function(x) {
+>>>>>>> 882f2a7cc176ef73410b92c1ee4f305687eea75a
   (log(data_agg_clean_total[2:dim(data_agg_clean_total)[1], x]) - log(data_agg_clean_total[1:(dim(data_agg_clean_total)[1]-1), x])) / 
     log(data_agg_clean_total[1:(dim(data_agg_clean_total)[1]-1), x])}))
 data_agg_total_trans_lograte$date = data_agg_clean_total$date[2:dim(data_agg_clean_total)[1]]
@@ -226,14 +294,23 @@ data_agg_trans_lograte_2016_rm = data_agg_total_trans_lograte[format(data_agg_to
 data_agg_clean_trans <- NULL
 for (i in unique(data_agg_clean$cell)) {
   data_agg_clean_i <- data_agg_clean[data_agg_clean$cell == i,]
+<<<<<<< HEAD
   trans_log <- as.data.frame(matrix(sapply(features, function(x) {
     (log(data_agg_clean_i[2:dim(data_agg_clean_i)[1], x]) - log(data_agg_clean_i[1:(dim(data_agg_clean_i)[1]-1), x])) }), ncol = length(features),
     byrow = F))
+=======
+  trans_log <- as.data.frame(sapply(features_name, function(x) {
+    (log(data_agg_clean_i[2:dim(data_agg_clean_i)[1], x]) - log(data_agg_clean_i[1:(dim(data_agg_clean_i)[1]-1), x])) }))
+>>>>>>> 882f2a7cc176ef73410b92c1ee4f305687eea75a
   trans_log$date <- data_agg_clean_i$date[2:nrow(data_agg_clean_i)]
   trans_log$cell <- i
   data_agg_clean_trans <- rbind(data_agg_clean_trans, trans_log)
 }
+<<<<<<< HEAD
 colnames(data_agg_clean_trans) <- c(features, "date", "cell")
+=======
+
+>>>>>>> 882f2a7cc176ef73410b92c1ee4f305687eea75a
 data_agg_clean_trans_2016_rm <- data_agg_clean_trans[format(data_agg_clean_trans$date,"%Y") != "2016", ]
 
 ##############################################
