@@ -17,7 +17,7 @@ source("functions_v3.R")
 ############################################
 ##### Section 1: Read and Correct data #####
 ############################################
-data_agg <- read.csv("data/Veritas_all_LA_v2.csv")
+data_agg <- read.csv("data/XX_all_LA_v2.csv")
 summary(data_agg)
 
 ### Correct data ###
