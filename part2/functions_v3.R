@@ -1334,7 +1334,7 @@ GetModelValTable <- function(model, is.tuning, ...) {
   cutoff <- 7
   season <- 7
   tuning_set2 <- tuning_set
-  initial_data <- data_agg_sum[as.Date(data_agg_sum$date) == (as.Date(tuning_set2[1,]$date)-1), ]
+  initial_data <- data_agg_sum[data_agg_sum$date == (tuning_set2$date[1]-1), ]
   print(initial_data)
   for (i in 1:length(validation_interval)) {
     validation_interval_i <- validation_interval[i]
@@ -1376,7 +1376,7 @@ GetTunValTable <- function(tuning_set, is.together, lag_num = 28, weight_type = 
   mae_var <- matrix(0, nrow = length(hold_day)*2, ncol = length(validation_interval))
   
   
-  initial_data <- data_agg_sum[as.Date(data_agg_sum$date) == (as.Date(tuning_set[1,]$date)-1), ]
+  initial_data <- data_agg_sum[data_agg_sum$date == (tuning_set$date[1]-1), ]
   x_feature <- c("gcu_seconds", "memory_gib_seconds")
   for (i in 1:length(validation_interval)) {
     for (j in 1:length(hold_day)) {
@@ -1493,16 +1493,14 @@ GetError <- function(data_trans,
   error_ls_day <- list()
   error_ls_sum <- list()
   estimator_org_ls <- list()
-  data_trans$date <- as.Date(data_trans$date)
-  initial_data_mat$date <- as.Date(initial_data_mat$date)
   
   for (i in 1:length(estimator_ls)) {
     estimator_tmp <- as.data.frame(estimator_ls[[i]])
     
-    estimator_tmp$date <- as.Date(initial_data_mat$date[i] + (season + lag_num + 1 : interval))
-    end_idx_i <- which(as.Date(data_trans$date) == (as.Date(estimator_tmp$date[1]) - 1))
+    estimator_tmp$date <- initial_data_mat$date[i] + (season + lag_num + 1 : interval)
+    end_idx_i <- which(data_trans$date == (estimator_tmp$date[1] - 1))
     dataset_i <- rbind(data_trans[(end_idx_i - season + 1):end_idx_i, c(features, "date")], estimator_tmp)
-    initial_data_i <- initial_data_mat[as.Date(initial_data_mat$date) == (as.Date(dataset_i[1,]$date) - 1), ]
+    initial_data_i <- initial_data_mat[initial_data_mat$date == (dataset_i$date[1] - 1), ]
     
     data_origin_i <- Backtransform(dataset_i,
                                    initial_data = initial_data_i,
@@ -1517,7 +1515,7 @@ GetError <- function(data_trans,
     estimator_org_i <- data_origin_i[(nrow(data_origin_i) - interval + 1):nrow(data_origin_i),]
     estimator_org_ls[[i]] <- estimator_org_i
     
-    org_idx <- as.Date(initial_data_mat$date) %in% as.Date(estimator_org_i$date)
+    org_idx <- initial_data_mat$date %in% estimator_org_i$date
     error_ls_day[[i]] <- initial_data_mat[org_idx, features] - 
       estimator_org_i[,features] 
     
@@ -1556,7 +1554,7 @@ GetConf <- function(model_fit,
                     CI = c(0.25, 0.95),
                     prediction_org,
                     ...) {
-  initial_start_idx <- which(as.Date(data_org$date) == (as.Date(dataset[1,]$date)-1)) 
+  initial_start_idx <- which(data_org$date == (dataset$date[1] - 1)) 
   initial_data_mat <- data_org[(initial_start_idx - season):(nrow(dataset) + initial_start_idx), ]
   
   
